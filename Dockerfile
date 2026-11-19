@@ -1,7 +1,7 @@
 # ==============================================================================
 # DOCKERFILE MULTI-STAGE — PORTAL INGEODRON (v5.0.0)
 # Compatible con compilación directa desde GitHub:
-#   docker build -t ingeodron-portal:5.0.0 https://github.com/vpolooro/Ingeodron_Ver5.git#main
+#   docker build -t ingeodron-portal:5.0.0 https://github.com/vpolooro/Ingeodron_Ver5.10.git#main
 # ==============================================================================
 
 # ------------------------------------------------------------------------------

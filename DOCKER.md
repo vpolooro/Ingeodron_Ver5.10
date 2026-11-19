@@ -1,6 +1,6 @@
-# Manual de Instalación y Despliegue en Docker — Portal INGEODRON (v5.0.0)
+# Manual de Instalación y Despliegue en Docker — Portal INGEODRON (v5.10)
 
-Guía completa para instalar y ejecutar la aplicación en **Docker** directamente desde GitHub (`https://github.com/vpolooro/Ingeodron_Ver5.git`) mediante **Docker Compose**.
+Guía completa para instalar y ejecutar la aplicación en **Docker** directamente desde GitHub (`https://github.com/vpolooro/Ingeodron_Ver5.10.git`) mediante **Docker Compose**.
 
 ---
 
@@ -10,7 +10,7 @@ Guía completa para instalar y ejecutar la aplicación en **Docker** directament
   1. **Etapa 1 (`builder`)**: Instala dependencias y compila el frontend React con Vite (`dist/`).
   2. **Etapa 2 (`runner`)**: Imagen ligera con Node 22 que ejecuta el servidor Express (`server.ts`), sirve la SPA compilada y gestiona `/api/*`, `/files/*` y `/app/storage`.
 - **`.dockerignore`**: Excluye `node_modules`, `dist`, `.git`, `.env` y `storage` para acelerar la compilación.
-- **`docker-compose.yml`**: Construye la imagen `ingeodron-portal:5.0.0` directamente desde GitHub (`https://github.com/vpolooro/Ingeodron_Ver5.git#main`) usando el `Dockerfile`, expone el puerto `3000`, monta el volumen persistente `./storage:/app/storage` y configura `healthcheck`.
+- **`docker-compose.yml`**: Construye la imagen `ingeodron-portal:5.0.0` directamente desde GitHub (`https://github.com/vpolooro/Ingeodron_Ver5.10.git#main`) usando el `Dockerfile`, expone el puerto `3000`, monta el volumen persistente `./storage:/app/storage` y configura `healthcheck`.
 - **`docker-compose.git.yml`**: Alternativa pensada para **Portainer / Synology / repositorios privados**, que clona y compila al arrancar usando la variable `GITHUB_TOKEN` y soporta `AUTO_UPDATE=true`.
 - **`docker-compose.https.yml`**: Extensión opcional con proxy inverso **Caddy** y HTTPS automático (Let's Encrypt).
 - **`.env.example`**: Plantilla de variables de entorno (`APP_PORT`, `APP_URL`, `SESSION_SECRET`, etc.).

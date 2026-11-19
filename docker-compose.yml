@@ -1,7 +1,7 @@
 # ==============================================================================
 # DOCKER COMPOSE — PORTAL INGEODRON v5.0.0
 # Instalación y compilación directa desde GitHub usando Dockerfile
-# Repositorio: https://github.com/vpolooro/Ingeodron_Ver5.git
+# Repositorio: https://github.com/vpolooro/Ingeodron_Ver5.10.git
 # ==============================================================================
 # Instalar y arrancar desde GitHub (repositorio público):
 #   docker compose up -d --build
@@ -10,7 +10,7 @@
 #   docker compose build --no-cache && docker compose up -d
 #
 # Si el repositorio es privado, define GIT_BUILD_CONTEXT con tu token:
-#   GIT_BUILD_CONTEXT="https://<GITHUB_TOKEN>@github.com/vpolooro/Ingeodron_Ver5.git#main" docker compose up -d --build
+#   GIT_BUILD_CONTEXT="https://<GITHUB_TOKEN>@github.com/vpolooro/Ingeodron_Ver5.10.git#main" docker compose up -d --build
 # (o usa docker-compose.git.yml pasando GITHUB_TOKEN como variable de entorno)
 #
 # (Opcional) Levantar con HTTPS automático (Caddy + Let's Encrypt):
@@ -23,7 +23,7 @@
 services:
   ingeodron-portal:
     build:
-      context: ${GIT_BUILD_CONTEXT:-https://github.com/vpolooro/Ingeodron_Ver5.git#main}
+      context: ${GIT_BUILD_CONTEXT:-https://github.com/vpolooro/Ingeodron_Ver5.10.git#main}
       dockerfile: Dockerfile
     image: ingeodron-portal:5.0.0
     container_name: ingeodron-portal
