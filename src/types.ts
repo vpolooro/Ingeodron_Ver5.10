@@ -1,0 +1,116 @@
+export interface AppUser {
+  id: number;
+  uid: string;
+  username?: string;
+  email: string;
+  password?: string;
+  displayName?: string;
+  role: 'admin' | 'client';
+  clientId?: number;
+  active?: boolean;
+  createdAt?: string;
+}
+
+export interface Client {
+  id: number;
+  code: string;
+  name: string;
+  cif: string;
+  contactName: string;
+  contactEmail: string;
+  phone?: string;
+  notes?: string;
+  logoUrl?: string;
+  viewer3dEnabled?: boolean;
+  createdAt?: string;
+}
+
+export interface Quarry {
+  id: number;
+  clientId: number;
+  name: string;
+  code: string;
+  location: string;
+  coordinates?: string;
+  materialType: string;
+  status: 'active' | 'in_restoration' | 'inactive';
+  areaM2?: number;
+  createdAt?: string;
+}
+
+export interface Zone {
+  id: number;
+  quarryId: number;
+  name: string;
+  code: string;
+  zoneType: 'stockpile' | 'bench_extraction' | 'fill_dump' | 'basin';
+  targetMaterial: string;
+  densityTonM3: number;
+  baseElevationM: number;
+  status: 'active' | 'inactive';
+  createdAt?: string;
+}
+
+export type SurveyStatus = 'active' | 'archived' | 'pending';
+
+export interface Survey {
+  id: number;
+  zoneId: number;
+  status?: SurveyStatus;
+  surveyDate: string;
+  flightCode: string;
+  droneModel: string;
+  operator: string;
+  cutVolumeM3: number;
+  fillVolumeM3: number;
+  netVolumeM3: number;
+  tonnageEst: number;
+  pointCount?: number;
+  groundResolutionCm?: number;
+  meanElevationM?: number;
+  maxElevationM?: number;
+  minElevationM?: number;
+  notes?: string;
+  rawPointDataJson?: string;
+  createdAt?: string;
+}
+
+export interface Stockpile {
+  id: number;
+  surveyId: number;
+  name: string;
+  code: string;
+  stockpileType: 'stockpile' | 'bench_extraction' | 'fill_dump' | 'basin';
+  material: string;
+  densityTonM3: number;
+  baseElevationM: number;
+  areaM2?: number;
+  cutVolumeM3: number;
+  fillVolumeM3: number;
+  netVolumeM3: number;
+  tonnageEst: number;
+  notes?: string;
+  createdAt?: string;
+}
+
+export interface Deliverable {
+  id: number;
+  quarryId: number;
+  surveyId?: number;
+  clientCode?: string;
+  clientName?: string;
+  clientFolder?: string;
+  flightSubFolder?: string;
+  title: string;
+  category: 'orthophoto' | 'contour_dxf' | 'pointcloud_las' | 'mesh_obj' | 'pdf_report' | 'gis_geotiff';
+  fileUrl: string;
+  shareUrl?: string;
+  relativePath?: string;
+  fileName: string;
+  fileSize: string;
+  crs: string;
+  uploadDate: string;
+  hasPhysicalFile?: boolean;
+  isServerStored?: boolean;
+  createdAt?: string;
+}

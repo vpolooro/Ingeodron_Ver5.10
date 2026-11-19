@@ -1,0 +1,53 @@
+# ==============================================================================
+# DOCKER COMPOSE — PORTAL INGEODRON v5.0.0
+# Instalación y compilación directa desde GitHub usando Dockerfile
+# Repositorio: https://github.com/vpolooro/Ingeodron_Ver5.git
+# ==============================================================================
+# Instalar y arrancar desde GitHub (repositorio público):
+#   docker compose up -d --build
+#
+# Actualizar a la última versión de GitHub (forzar recompilación):
+#   docker compose build --no-cache && docker compose up -d
+#
+# Si el repositorio es privado, define GIT_BUILD_CONTEXT con tu token:
+#   GIT_BUILD_CONTEXT="https://<GITHUB_TOKEN>@github.com/vpolooro/Ingeodron_Ver5.git#main" docker compose up -d --build
+# (o usa docker-compose.git.yml pasando GITHUB_TOKEN como variable de entorno)
+#
+# (Opcional) Levantar con HTTPS automático (Caddy + Let's Encrypt):
+#   DOMAIN=portal.tudominio.es docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+#
+# Almacenamiento persistente en el host:
+#   ./storage/<Cliente>/<CodigoVuelo>-<NombreVuelo>/
+# ==============================================================================
+
+services:
+  ingeodron-portal:
+    build:
+      context: ${GIT_BUILD_CONTEXT:-https://github.com/vpolooro/Ingeodron_Ver5.git#main}
+      dockerfile: Dockerfile
+    image: ingeodron-portal:5.0.0
+    container_name: ingeodron-portal
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - FILES_ROOT_DIR=/app/storage
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - SESSION_SECRET=${SESSION_SECRET:-ingeodron_production_secure_secret_2026_topografia_v5}
+      - NODE_OPTIONS=--max-old-space-size=1536
+    volumes:
+      - ./storage:/app/storage
+    networks:
+      - ingeodron-network
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+networks:
+  ingeodron-network:
+    driver: bridge

@@ -1,0 +1,25 @@
+# ==============================================================================
+# Extensión opcional HTTPS (Caddy Reverse Proxy con Let's Encrypt)
+# Uso:
+#   DOMAIN=portal.tudominio.es docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+# ==============================================================================
+
+services:
+  caddy-https:
+    image: caddy:alpine
+    restart: unless-stopped
+    depends_on:
+      - ingeodron-portal
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${DOMAIN:-:80} --to ingeodron-portal:3000
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - ingeodron-network
+
+volumes:
+  caddy_data:
+  caddy_config:

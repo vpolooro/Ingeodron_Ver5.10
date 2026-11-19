@@ -1,0 +1,46 @@
+<svg viewBox="69 32 96 62" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wing" x1="71" y1="40" x2="129" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1a5fb4" />
+      <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.92" />
+    </linearGradient>
+    <linearGradient id="body" x1="90" y1="56" x2="136" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1a5fb4" />
+      <stop offset="55%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#bfdbfe" />
+    </linearGradient>
+    <linearGradient id="chest" x1="112" y1="80" x2="144" y2="55" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#dbeafe" />
+      <stop offset="50%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#1a5fb4" />
+    </linearGradient>
+    <linearGradient id="head" x1="129" y1="49" x2="150" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#93c5fd" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1e40af" />
+    </linearGradient>
+    <linearGradient id="tail" x1="96" y1="91" x2="115" y2="69" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="65%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#93c5fd" />
+    </linearGradient>
+  </defs>
+  <path d="m 91.909756,34.776259 23.229274,9.697659 -12.14838,3.533256 z" fill="#5898e7" fill-opacity="0.82" stroke="#1e40af" stroke-width="0.25" stroke-linejoin="round" />
+  <path d="m 115.13903,44.473918 13.78722,11.171102 -25.9356,-7.637846 z" fill="#5898e7" fill-opacity="0.9" stroke="#1e40af" stroke-width="0.25" stroke-linejoin="round" />
+  <path d="M 128.92625,55.64502 71.20638,38.580147 89.519171,55.930688 Z" fill="url(#wing)" stroke="#1e3a8a" stroke-width="0.25" stroke-linejoin="round" />
+  <path d="M 89.519169,55.930688 114.44742,69.071391 127.52163,64.86338 Z" fill="url(#body)" stroke="#1e40af" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 89.519169,55.930688 46.699121,-0.210492 -8.69666,9.143184 z" fill="#2563eb" fill-opacity="0.92" stroke="#1e40af" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 135.43646,49.946705 -6.51021,5.698315 15.26066,-0.195455 z" fill="url(#head)" stroke="#1e3a8a" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 135.43646,49.946705 7.15672,-1.262952 7.00638,4.721032 z" fill="#3b82f6" stroke="#1e3a8a" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 135.43646,49.946705 14.1631,3.45808 -3.51822,2.285341 -1.89443,-0.240561 z" fill="#1d4ed8" stroke="#1e3a8a" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 149.59956,53.404786 13.56168,3.478411 -17.0799,-1.053095 z" fill="#9a9996" stroke="#475569" stroke-width="0.25" stroke-linejoin="round" />
+  <path d="m 136.21829,55.720196 -2.88675,12.268666 5.17209,-5.081873 7.57771,-7.216863 -1.89443,-0.240561 z" fill="url(#chest)" stroke="#1e40af" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 146.08134,55.690126 2.88674,0.270632 -10.10361,6.735739 z" fill="#60a5fa" stroke="#1e40af" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="M 136.21829,55.720196 112.6432,80.618374 133.33154,67.988862 Z" fill="url(#chest)" stroke="#1e40af" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 115.3796,79.024648 7.90847,0.180422 10.04347,-11.216208 z" fill="#93c5fd" stroke="#1d4ed8" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 127.52163,64.86338 -15.08892,4.929699 -1.35316,12.238596 1.56365,-1.413301 z" fill="#1e40af" stroke="#1e3a8a" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 112.43271,69.793079 -12.20853,13.712039 0.0902,5.923841 z" fill="url(#tail)" stroke="#1e3a8a" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 100.31438,89.428959 10.76517,-7.397284 1.35316,-12.238596 z" fill="#2563eb" stroke="#1e3a8a" stroke-width="0.2" stroke-linejoin="round" />
+  <path d="m 100.22418,83.505116 -4.480466,7.667918 4.570666,-1.744075 z" fill="#60a5fa" stroke="#1e3a8a" stroke-width="0.2" stroke-linejoin="round" />
+  <ellipse cx="144.80334" cy="53.825768" rx="0.92" ry="0.92" fill="#ffffff" stroke="#0f172a" stroke-width="0.35" />
+</svg>

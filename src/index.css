@@ -1,0 +1,521 @@
+@import "tailwindcss";
+
+:root {
+  --chart-grid: #1e293b;
+  --chart-baseline: #334155;
+  --chart-axis-text: #94a3b8;
+  --chart-code-text: #e2e8f0;
+  --chart-hover-bg: #1e293b;
+  --chart-cut-label: #fda4af;
+  --chart-flight-text: #34d399;
+}
+
+@layer base {
+  body {
+    background-color: #070a10;
+    color: #e5e7eb;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+.code-font,
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.glass-panel {
+  background: rgba(26, 35, 52, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+html:not(.theme-light) .glass-panel.border-gray-800 {
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #070a10;
+}
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* ============================================================================
+   LIGHT MODE THEME (html.theme-light)
+   Clean architectural slate palette with guaranteed WCAG AA contrast (>= 4.5:1)
+   while preserving the dark GIS canvas (.gis-canvas-surface)
+   ============================================================================ */
+html.theme-light {
+  color-scheme: light;
+  --chart-grid: #e2e8f0;
+  --chart-baseline: #94a3b8;
+  --chart-axis-text: #334155;
+  --chart-code-text: #0f172a;
+  --chart-hover-bg: #e2e8f0;
+  --chart-cut-label: #be123c;
+  --chart-flight-text: #047857;
+}
+
+html.theme-light body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+/* 1. Structural Surfaces & Elevation Hierarchy */
+html.theme-light .glass-panel {
+  background: #ffffff;
+  border: 1px solid #d5dde7;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Main page & content canvas (#070a10 / #0b0f17 / #090d16) */
+html.theme-light .bg-\[\#070a10\]:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0b0f17\]:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0b0f17\]\/85:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#090d16\]:not(.gis-canvas-surface):not(.gis-canvas-surface *) {
+  background-color: #f1f5f9 !important;
+}
+
+/* Recessed inner boxes / strips / filter bars */
+html.theme-light .bg-\[\#0b0f17\]\/40:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0b0f17\]\/60:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0b0f17\]\/70:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0b0f17\]\/75:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0b0f17\]\/80:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0b0f17\]\/90:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#303742\]:not(.gis-canvas-surface *) {
+  background-color: #f8fafc !important;
+  box-shadow: none !important;
+}
+
+/* Elevated chrome: header, sidebar, cards, dropdown popovers */
+html.theme-light [class*="bg-[#111827]"]:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#101724\]:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#1a2334\]:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#1d2331\]:not(.gis-canvas-surface *),
+html.theme-light .bg-\[\#0f1623\]:not(.gis-canvas-surface *) {
+  background-color: #ffffff !important;
+}
+
+html.theme-light header.bg-\[\#111827\]\/95 {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+}
+
+html.theme-light [class*="bg-gray-900"]:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light [class*="bg-gray-950"]:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-slate-900\/60:not(.gis-canvas-surface):not(.gis-canvas-surface *) {
+  background-color: #f8fafc !important;
+}
+
+/* Secondary neutral buttons & interactive surfaces */
+html.theme-light .bg-gray-800:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-gray-800\/80:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-gray-800\/90:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-gray-700:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .bg-slate-800:not(.gis-canvas-surface):not(.gis-canvas-surface *) {
+  background-color: #e2e8f0 !important;
+}
+
+html.theme-light .bg-gray-800\/40:not(.gis-canvas-surface *),
+html.theme-light .bg-gray-800\/50:not(.gis-canvas-surface *),
+html.theme-light .bg-gray-800\/60:not(.gis-canvas-surface *),
+html.theme-light .bg-gray-800\/70:not(.gis-canvas-surface *) {
+  background-color: #f1f5f9 !important;
+}
+
+html.theme-light .hover\:bg-gray-800:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-gray-800\/40:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-gray-800\/50:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-gray-800\/60:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-gray-800\/70:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-gray-800\/80:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-gray-700:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-gray-900:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-slate-800:hover:not(.gis-canvas-surface):not(.gis-canvas-surface *) {
+  background-color: #cbd5e1 !important;
+}
+
+/* Modal backdrops in light mode: softer slate scrim */
+html.theme-light .bg-black\/60:not(.gis-canvas-surface *),
+html.theme-light .bg-black\/70:not(.gis-canvas-surface *),
+html.theme-light .bg-black\/75:not(.gis-canvas-surface *) {
+  background-color: rgba(15, 23, 42, 0.45) !important;
+}
+
+/* Tinted semantic callout panels (950/900 -> soft crisp light tints) */
+html.theme-light .bg-blue-950:not(.gis-canvas-surface *),
+html.theme-light .bg-blue-950\/30:not(.gis-canvas-surface *),
+html.theme-light .bg-blue-950\/35:not(.gis-canvas-surface *) {
+  background-color: #eff6ff !important;
+}
+
+html.theme-light .bg-amber-950\/30:not(.gis-canvas-surface *),
+html.theme-light .bg-amber-950\/40:not(.gis-canvas-surface *),
+html.theme-light .bg-amber-900\/50:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-amber-900\/50:hover:not(.gis-canvas-surface *) {
+  background-color: #fef3c7 !important;
+}
+
+html.theme-light .bg-emerald-950\/20:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-950\/25:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-950\/40:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-950\/45:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-950\/50:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-950\/90:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-900\/50:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-emerald-900\/50:hover:not(.gis-canvas-surface *) {
+  background-color: #ecfdf5 !important;
+}
+
+html.theme-light .bg-cyan-950\/30:not(.gis-canvas-surface *),
+html.theme-light .bg-cyan-950\/70:not(.gis-canvas-surface *) {
+  background-color: #ecfeff !important;
+}
+
+html.theme-light .bg-indigo-950\/30:not(.gis-canvas-surface *) {
+  background-color: #eef2ff !important;
+}
+
+html.theme-light .bg-sky-950\/30:not(.gis-canvas-surface *) {
+  background-color: #f0f9ff !important;
+}
+
+html.theme-light .bg-red-950\/20:not(.gis-canvas-surface *),
+html.theme-light .bg-red-950\/25:not(.gis-canvas-surface *),
+html.theme-light .bg-red-950\/50:not(.gis-canvas-surface *),
+html.theme-light .bg-red-950\/70:not(.gis-canvas-surface *),
+html.theme-light .bg-red-950\/90:not(.gis-canvas-surface *) {
+  background-color: #fef2f2 !important;
+}
+
+/* 2. Borders & Dividers */
+html.theme-light [class*="border-gray-800"]:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light [class*="border-gray-700"]:not(.gis-canvas-surface):not(.gis-canvas-surface *),
+html.theme-light .border-slate-700\/60:not(.gis-canvas-surface *) {
+  border-color: #cbd5e1 !important;
+}
+
+html.theme-light .border-gray-600:not(.gis-canvas-surface *),
+html.theme-light .hover\:border-gray-700:hover:not(.gis-canvas-surface *) {
+  border-color: #94a3b8 !important;
+}
+
+html.theme-light .hover\:border-gray-500:hover:not(.gis-canvas-surface *) {
+  border-color: #64748b !important;
+}
+
+html.theme-light .border-cyan-800:not(.gis-canvas-surface *),
+html.theme-light .border-cyan-800\/60:not(.gis-canvas-surface *) {
+  border-color: #a5f3fc !important;
+}
+
+html.theme-light .border-indigo-800\/60:not(.gis-canvas-surface *) {
+  border-color: #c7d2fe !important;
+}
+
+html.theme-light .border-red-800:not(.gis-canvas-surface *) {
+  border-color: #fca5a5 !important;
+}
+
+html.theme-light [class*="divide-gray-800"] > :not(:first-child) {
+  border-color: #e2e8f0 !important;
+}
+
+/* 3. Neutral Typography (on light backgrounds) */
+html.theme-light .text-white:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-white:hover:not(.gis-canvas-surface *),
+html.theme-light .text-slate-100:not(.gis-canvas-surface *),
+html.theme-light .text-gray-100:not(.gis-canvas-surface *),
+html.theme-light .text-gray-200:not(.gis-canvas-surface *),
+html.theme-light .text-\[\#e5e3ef\]:not(.gis-canvas-surface *) {
+  color: #0f172a !important;
+}
+
+html.theme-light .text-slate-300:not(.gis-canvas-surface *),
+html.theme-light .text-gray-300:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-gray-300:hover:not(.gis-canvas-surface *) {
+  color: #1e293b !important;
+}
+
+html.theme-light .text-slate-400:not(.gis-canvas-surface *),
+html.theme-light .text-gray-400:not(.gis-canvas-surface *),
+html.theme-light .text-gray-500:not(.gis-canvas-surface *),
+html.theme-light .text-gray-600:not(.gis-canvas-surface *) {
+  color: #475569 !important;
+}
+
+/* 4. Semantic Accent Ink (strict >= 4.5:1 contrast on light surfaces) */
+html.theme-light .text-blue-200:not(.gis-canvas-surface *),
+html.theme-light .text-blue-300:not(.gis-canvas-surface *),
+html.theme-light .text-blue-400:not(.gis-canvas-surface *),
+html.theme-light .text-blue-500:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-blue-300:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-blue-400:hover:not(.gis-canvas-surface *) {
+  color: #1d4ed8 !important;
+}
+
+html.theme-light .text-sky-200:not(.gis-canvas-surface *),
+html.theme-light .text-sky-300:not(.gis-canvas-surface *),
+html.theme-light .text-sky-400:not(.gis-canvas-surface *),
+html.theme-light .text-\[\#74d4ff\]:not(.gis-canvas-surface *) {
+  color: #0369a1 !important;
+}
+
+html.theme-light .text-indigo-200:not(.gis-canvas-surface *),
+html.theme-light .text-indigo-300:not(.gis-canvas-surface *),
+html.theme-light .text-indigo-400:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-indigo-300:hover:not(.gis-canvas-surface *) {
+  color: #4338ca !important;
+}
+
+html.theme-light .text-cyan-200:not(.gis-canvas-surface *),
+html.theme-light .text-cyan-300:not(.gis-canvas-surface *),
+html.theme-light .text-cyan-400:not(.gis-canvas-surface *),
+html.theme-light .text-cyan-500:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-cyan-300:hover:not(.gis-canvas-surface *) {
+  color: #0e7490 !important;
+}
+
+html.theme-light .text-emerald-200:not(.gis-canvas-surface *),
+html.theme-light .text-emerald-300:not(.gis-canvas-surface *),
+html.theme-light .text-emerald-300\/90:not(.gis-canvas-surface *),
+html.theme-light .text-emerald-400:not(.gis-canvas-surface *),
+html.theme-light .text-emerald-400\/90:not(.gis-canvas-surface *),
+html.theme-light .text-emerald-500:not(.gis-canvas-surface *) {
+  color: #047857 !important;
+}
+
+html.theme-light .text-\[\#b8d020\]:not(.gis-canvas-surface *) {
+  color: #4d7c0f !important;
+}
+
+html.theme-light .text-amber-200:not(.gis-canvas-surface *),
+html.theme-light .text-amber-200\/90:not(.gis-canvas-surface *),
+html.theme-light .text-amber-300:not(.gis-canvas-surface *),
+html.theme-light .text-amber-300\/90:not(.gis-canvas-surface *),
+html.theme-light .text-amber-400:not(.gis-canvas-surface *),
+html.theme-light .text-amber-400\/80:not(.gis-canvas-surface *),
+html.theme-light .text-yellow-300:not(.gis-canvas-surface *),
+html.theme-light .text-yellow-400:not(.gis-canvas-surface *) {
+  color: #92400e !important;
+}
+
+html.theme-light .text-amber-500:not(.gis-canvas-surface *) {
+  color: #b45309 !important;
+}
+
+html.theme-light .text-red-200:not(.gis-canvas-surface *),
+html.theme-light .text-red-300:not(.gis-canvas-surface *),
+html.theme-light .text-red-400:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-red-300:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:text-red-400:hover:not(.gis-canvas-surface *) {
+  color: #b91c1c !important;
+}
+
+html.theme-light .text-rose-300:not(.gis-canvas-surface *),
+html.theme-light .text-rose-400:not(.gis-canvas-surface *) {
+  color: #be123c !important;
+}
+
+html.theme-light .text-purple-300:not(.gis-canvas-surface *),
+html.theme-light .text-purple-400:not(.gis-canvas-surface *) {
+  color: #6d28d9 !important;
+}
+
+/* 5. Solid Action Buttons & Active Tabs:
+   Placed AFTER text overrides with crisp WCAG AA dark-saturated fills + forced #ffffff ink */
+html.theme-light .bg-blue-600:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-blue-600:hover:not(.gis-canvas-surface *) {
+  background-color: #2563eb !important;
+  border-color: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-blue-600.hover\:bg-blue-500:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-blue-500:hover:not(.gis-canvas-surface *) {
+  background-color: #1d4ed8 !important;
+  border-color: #1e40af !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-blue-600:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-blue-600:hover:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-blue-500:hover:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-emerald-600:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-700:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-700\/90:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-emerald-600:hover:not(.gis-canvas-surface *) {
+  background-color: #047857 !important;
+  border-color: #065f46 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-emerald-600.hover\:bg-emerald-500:hover:not(.gis-canvas-surface *),
+html.theme-light .bg-emerald-700.hover\:bg-emerald-600:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-emerald-500:hover:not(.gis-canvas-surface *) {
+  background-color: #065f46 !important;
+  border-color: #064e3b !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-emerald-600:not(.gis-canvas-surface *) *,
+html.theme-light .bg-emerald-700:not(.gis-canvas-surface *) *,
+html.theme-light .bg-emerald-700\/90:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-emerald-600:hover:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-emerald-500:hover:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-amber-600:not(.gis-canvas-surface *) {
+  background-color: #b45309 !important;
+  border-color: #92400e !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-amber-600.hover\:bg-amber-500:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-amber-500:hover:not(.gis-canvas-surface *) {
+  background-color: #92400e !important;
+  border-color: #78350f !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-amber-600:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-amber-500:hover:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-cyan-600:not(.gis-canvas-surface *) {
+  background-color: #0e7490 !important;
+  border-color: #155e75 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-cyan-600.hover\:bg-cyan-500:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-cyan-500:hover:not(.gis-canvas-surface *) {
+  background-color: #155e75 !important;
+  border-color: #164e63 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-cyan-600:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-cyan-500:hover:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-sky-600:not(.gis-canvas-surface *),
+html.theme-light .bg-sky-700:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-sky-600:hover:not(.gis-canvas-surface *) {
+  background-color: #0369a1 !important;
+  border-color: #075985 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-sky-600.hover\:bg-sky-500:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-sky-500:hover:not(.gis-canvas-surface *) {
+  background-color: #075985 !important;
+  border-color: #0c4a6e !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-sky-600:not(.gis-canvas-surface *) *,
+html.theme-light .bg-sky-700:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-sky-600:hover:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-sky-500:hover:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-indigo-600:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-indigo-600:hover:not(.gis-canvas-surface *) {
+  background-color: #4338ca !important;
+  border-color: #3730a3 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-indigo-600.hover\:bg-indigo-500:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-indigo-500:hover:not(.gis-canvas-surface *) {
+  background-color: #3730a3 !important;
+  border-color: #312e81 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-indigo-600:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-indigo-600:hover:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-indigo-500:hover:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-purple-600:not(.gis-canvas-surface *) {
+  background-color: #7e22ce !important;
+  border-color: #6b21a8 !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-purple-600:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-red-600:not(.gis-canvas-surface *) {
+  background-color: #dc2626 !important;
+  border-color: #b91c1c !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-red-600.hover\:bg-red-500:hover:not(.gis-canvas-surface *),
+html.theme-light .hover\:bg-red-500:hover:not(.gis-canvas-surface *) {
+  background-color: #b91c1c !important;
+  border-color: #991b1b !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-red-600:not(.gis-canvas-surface *) *,
+html.theme-light .hover\:bg-red-500:hover:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-slate-600:not(.gis-canvas-surface *) {
+  background-color: #334155 !important;
+  border-color: #1e293b !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-slate-600:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+html.theme-light .bg-gradient-to-r.from-blue-600.to-cyan-600:not(.gis-canvas-surface *) {
+  background-image: linear-gradient(to right, #1d4ed8, #0e7490) !important;
+  border: 1px solid #1e40af !important;
+  color: #ffffff !important;
+}
+html.theme-light .bg-gradient-to-r.from-blue-600.to-cyan-600:hover:not(.gis-canvas-surface *) {
+  background-image: linear-gradient(to right, #1e40af, #155e75) !important;
+}
+html.theme-light .bg-gradient-to-r.from-blue-600.to-cyan-600:not(.gis-canvas-surface *) * {
+  color: #ffffff !important;
+}
+
+/* 6. Form Inputs, Selects & Scrollbar */
+html.theme-light input:not(.gis-canvas-surface *),
+html.theme-light textarea:not(.gis-canvas-surface *),
+html.theme-light select:not(.gis-canvas-surface *) {
+  color: #0f172a;
+}
+
+html.theme-light input:not(.gis-canvas-surface *)::placeholder,
+html.theme-light textarea:not(.gis-canvas-surface *)::placeholder {
+  color: #64748b !important;
+}
+
+html.theme-light select:not(.gis-canvas-surface *) option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html.theme-light ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+html.theme-light ::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+}
+html.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}

@@ -1,0 +1,8 @@
+{
+  "name": "INGEODRON - Portal de Explotaciones y Cubicación Ver 5.10",
+  "description": "INGEODRON - Portal de Gestión Topográfica, Fotogrametría, Visor 3D y Cubicación de Canteras.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

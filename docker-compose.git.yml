@@ -1,0 +1,75 @@
+# ==============================================================================
+# DOCKER COMPOSE — DESPLIEGUE REMOTO DESDE GITHUB (Ingeodron_Ver5)
+# ==============================================================================
+# Uso:
+#   docker compose -f docker-compose.git.yml up -d
+# ==============================================================================
+
+services:
+  ingeodron-portal:
+    image: node:22-bookworm-slim
+    container_name: ingeodron-portal
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - FILES_ROOT_DIR=/app/storage
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - SESSION_SECRET=${SESSION_SECRET:-ingeodron_production_secure_secret_2026_topografia_v5}
+      - GIT_REPO_URL=${GIT_REPO_URL:-https://github.com/vpolooro/Ingeodron_Ver5.git}
+      - GIT_BRANCH=${GIT_BRANCH:-main}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - AUTO_UPDATE=${AUTO_UPDATE:-true}
+      - NODE_OPTIONS=--max-old-space-size=1536
+    volumes:
+      - ./storage:/app/storage
+    networks:
+      - ingeodron-network
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export DEBIAN_FRONTEND=noninteractive
+        if ! command -v git >/dev/null 2>&1; then
+          (apt-get update || apt-get -o Acquire::ForceIPv4=true update)
+          apt-get install -y --no-install-recommends git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+        fi
+        mkdir -p /app/storage
+        REPO_URL="$${GIT_REPO_URL}"
+        if [ -n "$${GITHUB_TOKEN}" ]; then
+          AUTH_URL=$$(node -e "const u = new URL(process.env.GIT_REPO_URL); u.username = 'x-access-token'; u.password = process.env.GITHUB_TOKEN; process.stdout.write(u.toString());")
+          REPO_URL="$${AUTH_URL}"
+        fi
+        if [ ! -d /app/repo/.git ] || ! git -C /app/repo rev-parse --verify HEAD >/dev/null 2>&1; then
+          rm -rf /app/repo
+          if [ -n "$${GIT_BRANCH}" ]; then
+            git clone --depth 1 --branch "$${GIT_BRANCH}" "$${REPO_URL}" /app/repo
+          else
+            git clone --depth 1 "$${REPO_URL}" /app/repo
+          fi
+        elif [ "$${AUTO_UPDATE}" = "true" ]; then
+          git -C /app/repo remote set-url origin "$${REPO_URL}"
+          if git -C /app/repo fetch --depth 1 origin "$${GIT_BRANCH:-main}"; then
+            git -C /app/repo reset --hard "origin/$${GIT_BRANCH:-main}"
+          else
+            echo "Aviso: no se pudo actualizar desde GitHub; se usará la copia local existente."
+          fi
+        fi
+        cd /app/repo
+        npm install --include=dev --legacy-peer-deps --no-audit --no-fund
+        NODE_ENV=production npm run build
+        exec ./node_modules/.bin/tsx server.ts
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 180s
+
+networks:
+  ingeodron-network:
+    driver: bridge
