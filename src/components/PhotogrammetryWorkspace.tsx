@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Boxes, CheckCircle2, Eye, EyeOff, FolderUp, Image as ImageIcon, Map as MapIcon, Mountain, Plane, Upload } from 'lucide-react';
+import { Box, CheckCircle2, Eye, EyeOff, FileCode2, FolderUp, Image as ImageIcon, Map as MapIcon, Mountain, Plane, Upload } from 'lucide-react';
 import { Quarry3DViewer, type External3DSource } from './Quarry3DViewer.tsx';
 import { Quarry2DOrthophotoViewer } from './Quarry2DOrthophotoViewer.tsx';
 import { buildQuarryTerrainData } from '../utils/quarryTerrainModel.ts';
@@ -8,7 +8,7 @@ import {
   isSupportedOrthoFileName,
   loadOrthophotoCanvasFromUrl,
 } from '../utils/threeFileLoader.ts';
-import type { Deliverable, Quarry, Stockpile, Survey, Zone } from '../types.ts';
+import type { Deliverable, FlightDxfOverlay, Quarry, Stockpile, Survey, Zone } from '../types.ts';
 import { formatDateEu } from '../utils/dateUtils.ts';
 
 interface PhotogrammetryWorkspaceProps {
@@ -17,9 +17,11 @@ interface PhotogrammetryWorkspaceProps {
   stockpiles: Stockpile[];
   activeFlight?: Survey;
   deliverables?: Deliverable[];
+  dxfOverlay?: FlightDxfOverlay | null;
   isAdmin?: boolean;
   preferredDeliverableId?: number | null;
   onOpenUploadModal?: () => void;
+  onOpenDxfSettings?: () => void;
 }
 
 function appendAuthToken(rawUrl: string): string {
@@ -38,12 +40,15 @@ export const PhotogrammetryWorkspace: React.FC<PhotogrammetryWorkspaceProps> = (
   stockpiles,
   activeFlight,
   deliverables = [],
+  dxfOverlay = null,
   isAdmin = false,
   preferredDeliverableId = null,
   onOpenUploadModal,
+  onOpenDxfSettings,
 }) => {
   const [viewerMode, setViewerMode] = useState<'3d' | '2d'>('3d');
-  const [showFlightStockpiles, setShowFlightStockpiles] = useState<boolean>(true);
+  const [showDxfOverlay, setShowDxfOverlay] = useState<boolean>(true);
+  const [dxfOpacity, setDxfOpacity] = useState<number>(0.48);
 
   // Server deliverables strictly scoped to the single active quarry
   const quarryScopedDeliverables = useMemo(() => {
@@ -182,8 +187,16 @@ export const PhotogrammetryWorkspace: React.FC<PhotogrammetryWorkspaceProps> = (
     };
   }, [selectedOrthoKey, localOrthoFile, compatibleOrthoDeliverables]);
 
+  useEffect(() => {
+    if (isAdmin) return;
+    setLocal3DPreview(null);
+    setLocalOrthoFile(null);
+    setSelected3DKey((k) => (k === 'local' ? 'parametric' : k));
+    setSelectedOrthoKey((k) => (k === 'local' ? 'parametric' : k));
+  }, [isAdmin]);
+
   const handleLocalPreviewFile = (file: File | null) => {
-    if (!file) return;
+    if (!isAdmin || !file) return;
     setLocalHintError(null);
     setLocalSuccessNotice(null);
     const lower = file.name.toLowerCase();
@@ -254,7 +267,7 @@ export const PhotogrammetryWorkspace: React.FC<PhotogrammetryWorkspaceProps> = (
                 )}
               </h2>
               <p className="text-xs text-gray-400">
-                {quarry?.name || 'Explotación Activa'} · {terrain.stockpiles.length} acopio(s) modelados en MDE · Cota Z automática
+                {quarry?.name || 'Explotación Activa'} · Cota Z automática
               </p>
             </div>
           </div>
@@ -302,7 +315,7 @@ export const PhotogrammetryWorkspace: React.FC<PhotogrammetryWorkspaceProps> = (
                     {d.title || d.fileName} ({d.fileName})
                   </option>
                 ))}
-                {local3DPreview && (
+                {isAdmin && local3DPreview && (
                   <option value="local">{local3DPreview.label}</option>
                 )}
               </select>
@@ -322,70 +335,81 @@ export const PhotogrammetryWorkspace: React.FC<PhotogrammetryWorkspaceProps> = (
                     {d.title || d.fileName} ({d.fileName})
                   </option>
                 ))}
-                {localOrthoFile && (
+                {isAdmin && localOrthoFile && (
                   <option value="local">Local: {localOrthoFile.fileName}</option>
                 )}
               </select>
             </label>
 
-            {((viewerMode === '3d' && !activeExternal3DSource) || viewerMode === '2d') && terrain.stockpiles.length > 0 && (
+            {dxfOverlay ? (
               <button
                 type="button"
-                onClick={() => setShowFlightStockpiles((v) => !v)}
+                onClick={() => setShowDxfOverlay((v) => !v)}
                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border transition cursor-pointer ${
-                  showFlightStockpiles
-                    ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border-amber-500/45'
+                  showDxfOverlay
+                    ? 'bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border-cyan-500/45'
                     : 'bg-[#0b0f17] hover:bg-gray-800 text-gray-400 hover:text-white border-gray-700'
                 }`}
-                title={
-                  showFlightStockpiles
-                    ? 'Ocultar los marcadores y fichas de los acopios del vuelo en el visor'
-                    : 'Mostrar los marcadores y fichas de los acopios del vuelo en el visor'
-                }
-                aria-pressed={showFlightStockpiles}
+                title={`Superponer polígonos DXF 3D (${dxfOverlay.fileName}) sobre modelos 3D/2D`}
+                aria-pressed={showDxfOverlay}
               >
-                <Boxes className={`w-3.5 h-3.5 ${showFlightStockpiles ? 'text-amber-400' : 'text-gray-500'}`} />
-                <span>Acopios del vuelo ({terrain.stockpiles.length})</span>
-                {showFlightStockpiles ? (
-                  <Eye className="w-3.5 h-3.5 text-amber-300" />
+                <FileCode2 className={`w-3.5 h-3.5 ${showDxfOverlay ? 'text-cyan-400' : 'text-gray-500'}`} />
+                <span>DXF 3D ({dxfOverlay.polygons.filter((p) => p.visible !== false).length})</span>
+                {showDxfOverlay ? (
+                  <Eye className="w-3.5 h-3.5 text-cyan-300" />
                 ) : (
                   <EyeOff className="w-3.5 h-3.5 text-gray-500" />
                 )}
               </button>
+            ) : (
+              isAdmin &&
+              onOpenDxfSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenDxfSettings}
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 border border-dashed border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-200 transition cursor-pointer"
+                  title="Ir a Configuración → Perímetros DXF 3D para subir el DXF de este vuelo"
+                >
+                  <FileCode2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Asignar DXF 3D del vuelo</span>
+                </button>
+              )
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <label
-              className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
-              title="Cargar temporalmente desde tu equipo (.OBJ, .GLB, .PLY, .STL, .LAS, .XYZ, .PCD, .PNG, .JPG, .TIF)"
-            >
-              <FolderUp className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Abrir Archivo Local</span>
-              <input
-                type="file"
-                accept=".glb,.gltf,.obj,.ply,.stl,.las,.laz,.xyz,.pcd,.csv,.txt,.pts,.png,.jpg,.jpeg,.webp,.tif,.tiff"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0] || null;
-                  e.target.value = '';
-                  handleLocalPreviewFile(f);
-                }}
-              />
-            </label>
-
-            {isAdmin && onOpenUploadModal && (
-              <button
-                type="button"
-                onClick={onOpenUploadModal}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold inline-flex items-center gap-1.5 shadow cursor-pointer transition"
-                title="Subir archivo 3D u ortofoto al servidor del cliente (storage/<Cliente>/<Vuelo>/)"
+          {isAdmin && (
+            <div className="flex flex-wrap items-center gap-2">
+              <label
+                className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-semibold inline-flex items-center gap-1.5 cursor-pointer transition"
+                title="Cargar temporalmente desde tu equipo (.OBJ, .GLB, .PLY, .STL, .LAS, .XYZ, .PCD, .PNG, .JPG, .TIF)"
               >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Subir Modelo 3D / Ortofoto al Cliente</span>
-              </button>
-            )}
-          </div>
+                <FolderUp className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Abrir Archivo Local</span>
+                <input
+                  type="file"
+                  accept=".glb,.gltf,.obj,.ply,.stl,.las,.laz,.xyz,.pcd,.csv,.txt,.pts,.png,.jpg,.jpeg,.webp,.tif,.tiff"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    e.target.value = '';
+                    handleLocalPreviewFile(f);
+                  }}
+                />
+              </label>
+
+              {onOpenUploadModal && (
+                <button
+                  type="button"
+                  onClick={onOpenUploadModal}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold inline-flex items-center gap-1.5 shadow cursor-pointer transition"
+                  title="Subir archivo 3D u ortofoto al servidor del cliente (storage/<Cliente>/<Vuelo>/)"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Subir Modelo 3D / Ortofoto al Cliente</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {localSuccessNotice && (
@@ -421,8 +445,12 @@ export const PhotogrammetryWorkspace: React.FC<PhotogrammetryWorkspaceProps> = (
           external3DSource={activeExternal3DSource}
           customOrthoCanvas={customOrthoCanvas}
           onClearExternal3D={() => setSelected3DKey('parametric')}
-          showFlightStockpiles={showFlightStockpiles}
-          onToggleFlightStockpiles={() => setShowFlightStockpiles((v) => !v)}
+          dxfOverlay={dxfOverlay}
+          dxfStockpiles={scopedStockpiles}
+          showDxfOverlay={showDxfOverlay}
+          onToggleDxfOverlay={() => setShowDxfOverlay((v) => !v)}
+          dxfOpacity={dxfOpacity}
+          onChangeDxfOpacity={setDxfOpacity}
         />
       ) : (
         <Quarry2DOrthophotoViewer
@@ -431,8 +459,12 @@ export const PhotogrammetryWorkspace: React.FC<PhotogrammetryWorkspaceProps> = (
           activeFlight={activeFlight}
           terrain={terrain}
           customOrthoCanvas={customOrthoCanvas}
-          showFlightStockpiles={showFlightStockpiles}
-          onToggleFlightStockpiles={() => setShowFlightStockpiles((v) => !v)}
+          dxfOverlay={dxfOverlay}
+          dxfStockpiles={scopedStockpiles}
+          showDxfOverlay={showDxfOverlay}
+          onToggleDxfOverlay={() => setShowDxfOverlay((v) => !v)}
+          dxfOpacity={dxfOpacity}
+          onChangeDxfOpacity={setDxfOpacity}
         />
       )}
     </section>

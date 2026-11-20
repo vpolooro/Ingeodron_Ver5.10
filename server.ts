@@ -5,6 +5,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import multer from 'multer';
 import type { Request, Response, NextFunction } from 'express';
+import {
+  autoMatchDxfPolygonsToStockpiles,
+  parseDxfOverlayText,
+} from './src/utils/dxfOverlayParser.ts';
+import type { FlightDxfOverlay, Stockpile } from './src/types.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
 const SESSION_SECRET =
@@ -18,6 +23,7 @@ const TMP_UPLOAD_DIR = path.join(STORAGE_DIR, '.tmp');
 const DELIVERABLES_INDEX_PATH = path.join(STORAGE_DIR, 'deliverables-index.json');
 const LEGACY_DELIVERABLES_INDEX_PATH = path.join(STORAGE_DIR, 'vuelos', 'deliverables-index.json');
 const STOCKPILE_PHOTOS_INDEX_PATH = path.join(STORAGE_DIR, 'stockpile-photos.json');
+const FLIGHT_DXF_INDEX_PATH = path.join(STORAGE_DIR, 'flight-dxf-overlays.json');
 const USERS_FILE_PATH = path.join(FILES_ROOT_DIR, 'users.json');
 const CLIENTS_FILE_PATH = path.join(FILES_ROOT_DIR, 'clients.json');
 const MATERIALS_FILE_PATH = path.join(FILES_ROOT_DIR, 'materials.json');
@@ -709,6 +715,52 @@ function writeStockpilePhotosIndex(items: ServerStockpilePhotoRecord[]): void {
   fs.writeFileSync(STOCKPILE_PHOTOS_INDEX_PATH, JSON.stringify(items, null, 2), 'utf-8');
 }
 
+function getAllFlightDxfCandidatePaths(item: FlightDxfOverlay): string[] {
+  const storedName = item.storedFileName || item.fileName || '';
+  if (!item.clientFolder || !storedName) return [];
+  if (item.flightSubFolder) {
+    return [
+      path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, 'dxf_acopios', storedName),
+    ];
+  }
+  return [path.join(STORAGE_DIR, item.clientFolder, 'dxf_acopios', storedName)];
+}
+
+function getFlightDxfFilePath(item: FlightDxfOverlay): string {
+  const candidates = getAllFlightDxfCandidatePaths(item);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0] || '';
+}
+
+function readRawFlightDxfIndex(): FlightDxfOverlay[] {
+  ensureStorageDirectories();
+  if (!fs.existsSync(FLIGHT_DXF_INDEX_PATH)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(FLIGHT_DXF_INDEX_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function readFlightDxfIndex(): FlightDxfOverlay[] {
+  return readRawFlightDxfIndex().filter((item: FlightDxfOverlay) => {
+    if (!item || !item.clientFolder || !(item.storedFileName || item.fileName)) return false;
+    const p = getFlightDxfFilePath(item);
+    return isPathInsideDir(p, STORAGE_DIR) && fs.existsSync(p);
+  });
+}
+
+function writeFlightDxfIndex(items: FlightDxfOverlay[]): void {
+  ensureStorageDirectories();
+  fs.writeFileSync(FLIGHT_DXF_INDEX_PATH, JSON.stringify(items, null, 2), 'utf-8');
+}
+
 function isProtectedStoragePath(targetPath: string): boolean {
   const resolved = path.resolve(targetPath);
   const protectedPaths = new Set([
@@ -717,6 +769,7 @@ function isProtectedStoragePath(targetPath: string): boolean {
     path.resolve(DELIVERABLES_INDEX_PATH),
     path.resolve(LEGACY_DELIVERABLES_INDEX_PATH),
     path.resolve(STOCKPILE_PHOTOS_INDEX_PATH),
+    path.resolve(FLIGHT_DXF_INDEX_PATH),
     path.resolve(USERS_FILE_PATH),
     path.resolve(CLIENTS_FILE_PATH),
     path.resolve(MATERIALS_FILE_PATH),
@@ -780,6 +833,7 @@ function pruneEmptyFlightSubdirIfUnused(clientFolder?: string, flightSubFolder?:
     const flightDir = path.join(clientDir, flightSubFolder);
     removeDirIfEmptySafe(path.join(flightDir, 'imagenes_acopios'));
     removeDirIfEmptySafe(path.join(flightDir, 'fotos_acopios'));
+    removeDirIfEmptySafe(path.join(flightDir, 'dxf_acopios'));
     pruneEmptySubdirsUpTo(flightDir, clientDir);
 
     const legacyFlightDir = path.join(STORAGE_DIR, 'vuelos', clientFolder, flightSubFolder);
@@ -787,6 +841,7 @@ function pruneEmptyFlightSubdirIfUnused(clientFolder?: string, flightSubFolder?:
   } else {
     removeDirIfEmptySafe(path.join(clientDir, 'imagenes_acopios'));
     removeDirIfEmptySafe(path.join(clientDir, 'fotos_acopios'));
+    removeDirIfEmptySafe(path.join(clientDir, 'dxf_acopios'));
     const legacyClientDir = path.join(STORAGE_DIR, 'vuelos', clientFolder);
     pruneEmptySubdirsUpTo(legacyClientDir, STORAGE_DIR);
   }
@@ -896,7 +951,7 @@ async function startServer(): Promise<void> {
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
       ok: true,
-      version: '5.20',
+      version: '5.50',
       filesRootDir: FILES_ROOT_DIR,
       storageDir: STORAGE_DIR,
       security: {
@@ -1866,6 +1921,327 @@ async function startServer(): Promise<void> {
   });
 
   // --------------------------------------------------------------------------
+  // FLIGHT 3D DXF OVERLAY ENDPOINTS (Admin upload/assign/delete; Client view/download)
+  // --------------------------------------------------------------------------
+
+  app.get('/api/flights/dxf-overlays', requireAuth, (req: Request, res: Response) => {
+    const user = (req as unknown as { authUser: AuthTokenPayload }).authUser;
+    const all = readFlightDxfIndex();
+    const overlays =
+      user.role === 'admin'
+        ? all
+        : all.filter(
+            (o) =>
+              o.clientFolder === user.clientFolder ||
+              (user.clientId !== undefined && o.clientId === user.clientId) ||
+              (user.clientCode && o.clientCode?.toLowerCase() === user.clientCode.toLowerCase())
+          );
+
+    res.json({ overlays });
+  });
+
+  app.post(
+    '/api/flights/:surveyId/dxf',
+    requireAuth,
+    requireAdmin,
+    (req: Request, res: Response, next: NextFunction) => {
+      upload.single('file')(req, res, (err: unknown) => {
+        if (!err) {
+          next();
+          return;
+        }
+        if (err instanceof multer.MulterError) {
+          res.status(400).json({
+            error: `Error al recibir el archivo DXF (${err.code}): ${err.message}`,
+            code: err.code,
+          });
+          return;
+        }
+        const msg = err instanceof Error ? err.message : 'Error procesando el archivo DXF.';
+        res.status(500).json({ error: msg, code: 'UPLOAD_MIDDLEWARE_ERROR' });
+      });
+    },
+    (req: Request, res: Response) => {
+      const surveyId = Number(req.params.surveyId);
+      const uploadedFile = req.file;
+
+      if (!Number.isFinite(surveyId) || surveyId <= 0) {
+        if (uploadedFile && fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+        res.status(400).json({ error: 'ID de vuelo inválido.' });
+        return;
+      }
+
+      if (!uploadedFile) {
+        res.status(400).json({ error: 'Debes seleccionar un archivo .DXF para subir.' });
+        return;
+      }
+
+      try {
+        const body = (req.body || {}) as Record<string, string | undefined>;
+        const originalName = sanitizeFileName(uploadedFile.originalname || `vuelo_${surveyId}.dxf`);
+        const ext = path.extname(originalName).toLowerCase();
+        if (ext !== '.dxf') {
+          if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+          res.status(400).json({
+            error: `Formato "${ext || 'desconocido'}" no admitido. Sube un archivo CAD ASCII en formato .DXF.`,
+            code: 'FORBIDDEN_FILE_TYPE',
+          });
+          return;
+        }
+
+        const dxfText = fs.readFileSync(uploadedFile.path, 'utf-8');
+        const parsed = parseDxfOverlayText(dxfText);
+
+        let flightStockpiles: Array<Pick<Stockpile, 'id' | 'code' | 'name' | 'material'>> = [];
+        if (body.stockpilesJson) {
+          try {
+            const arr = JSON.parse(body.stockpilesJson);
+            if (Array.isArray(arr)) flightStockpiles = arr;
+          } catch {
+            // ignore malformed hint json
+          }
+        }
+
+        const current = readRawFlightDxfIndex();
+        const prevIdx = current.findIndex((o) => o.surveyId === surveyId);
+        const prevOverlay = prevIdx >= 0 ? current[prevIdx] : null;
+
+        // Preserve previous manual color/stockpile assignments if polygon label or index matches
+        let polygons = parsed.polygons.map((poly, idx) => {
+          if (!prevOverlay) return poly;
+          const prevMatch =
+            prevOverlay.polygons.find(
+              (pp) =>
+                pp.label.trim().toLowerCase() === poly.label.trim().toLowerCase() ||
+                pp.index === idx + 1
+            ) || null;
+          if (!prevMatch) return poly;
+          return {
+            ...poly,
+            color: prevMatch.color || poly.color,
+            stockpileId: prevMatch.stockpileId ?? null,
+            visible: prevMatch.visible !== false,
+          };
+        });
+
+        polygons = autoMatchDxfPolygonsToStockpiles(polygons, flightStockpiles);
+
+        const clientIdRaw = body.clientId ? Number(body.clientId) : undefined;
+        const clientId = clientIdRaw && Number.isFinite(clientIdRaw) ? clientIdRaw : undefined;
+        const quarryIdRaw = body.quarryId ? Number(body.quarryId) : undefined;
+        const quarryId = quarryIdRaw && Number.isFinite(quarryIdRaw) ? quarryIdRaw : undefined;
+        const clientCode = sanitizeClientCode(body.clientCode);
+        const clientName = (body.clientName || 'Cliente General').trim();
+        const { clientFolder, clientDir } = ensureClientDirectoryOnDisk(
+          clientCode,
+          clientName,
+          body.clientFolder
+        );
+
+        const rawFlightCode = body.flightCode?.trim() || `VUE-${surveyId}`;
+        const rawFlightNotes = body.flightNotes?.trim() || 'Vuelo';
+        const { flightSubFolder, flightDir } = ensureFlightSubDirectory(
+          clientDir,
+          rawFlightCode,
+          rawFlightNotes
+        );
+
+        const dxfDir = path.join(flightDir, 'dxf_acopios');
+        if (!isPathInsideDir(dxfDir, clientDir)) {
+          throw new Error('Ruta de carpeta DXF no válida.');
+        }
+        if (!fs.existsSync(dxfDir)) {
+          fs.mkdirSync(dxfDir, { recursive: true });
+        }
+
+        const storedFileName = sanitizeFileName(originalName);
+        const finalDestPath = path.join(dxfDir, storedFileName);
+        if (!isPathInsideDir(finalDestPath, dxfDir)) {
+          throw new Error('Nombre de archivo DXF no válido.');
+        }
+
+        const fileSizeStr = formatFileSize(uploadedFile.size);
+        moveFileSafe(uploadedFile.path, finalDestPath);
+
+        if (prevOverlay) {
+          for (const oldPath of getAllFlightDxfCandidatePaths(prevOverlay)) {
+            if (path.resolve(oldPath) !== path.resolve(finalDestPath)) {
+              unlinkFileSafe(oldPath);
+            }
+          }
+          current.splice(prevIdx, 1);
+        }
+
+        const nowIso = new Date().toISOString();
+        const record: FlightDxfOverlay = {
+          surveyId,
+          quarryId,
+          clientId,
+          clientCode,
+          clientName,
+          clientFolder,
+          flightSubFolder,
+          flightCode: rawFlightCode,
+          fileName: originalName,
+          storedFileName,
+          fileSize: fileSizeStr,
+          relativePath: `storage/${clientFolder}/${flightSubFolder}/dxf_acopios/${storedFileName}`,
+          bounds: parsed.bounds,
+          polygons,
+          surfaceCount: parsed.surfaceCount,
+          uploadedAt: nowIso,
+          updatedAt: nowIso,
+        };
+
+        current.unshift(record);
+        writeFlightDxfIndex(current);
+
+        res.status(200).json({ ok: true, overlay: record });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error procesando el archivo DXF 3D.';
+        res.status(400).json({ error: msg });
+      } finally {
+        if (uploadedFile && fs.existsSync(uploadedFile.path)) {
+          try {
+            fs.unlinkSync(uploadedFile.path);
+          } catch {
+            // ignore temp cleanup failure
+          }
+        }
+      }
+    }
+  );
+
+  app.put('/api/flights/:surveyId/dxf/assignments', requireAuth, requireAdmin, (req: Request, res: Response) => {
+    const surveyId = Number(req.params.surveyId);
+    if (!Number.isFinite(surveyId) || surveyId <= 0) {
+      res.status(400).json({ error: 'ID de vuelo inválido.' });
+      return;
+    }
+
+    const bodyPolygons = req.body?.polygons;
+    if (!Array.isArray(bodyPolygons)) {
+      res.status(400).json({ error: 'Formato de asignaciones DXF inválido.' });
+      return;
+    }
+
+    const items = readRawFlightDxfIndex();
+    const idx = items.findIndex((o) => o.surveyId === surveyId);
+    if (idx < 0) {
+      res.status(404).json({ error: 'No existe un archivo DXF cargado para este vuelo.' });
+      return;
+    }
+
+    const patchById = new Map<
+      string,
+      { color?: string; stockpileId?: number | null; label?: string; visible?: boolean }
+    >();
+    for (const item of bodyPolygons) {
+      if (item && typeof item.id === 'string') {
+        patchById.set(item.id, item);
+      }
+    }
+
+    const current = items[idx];
+    const updatedOverlay: FlightDxfOverlay = {
+      ...current,
+      updatedAt: new Date().toISOString(),
+      polygons: current.polygons.map((poly) => {
+        const patch = patchById.get(poly.id);
+        if (!patch) return poly;
+        const cleanColor =
+          typeof patch.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(patch.color.trim())
+            ? patch.color.trim()
+            : poly.color;
+        const cleanStockpileId =
+          patch.stockpileId === null || patch.stockpileId === undefined || patch.stockpileId === 0
+            ? null
+            : Number.isFinite(Number(patch.stockpileId))
+              ? Number(patch.stockpileId)
+              : poly.stockpileId ?? null;
+        return {
+          ...poly,
+          color: cleanColor,
+          stockpileId: cleanStockpileId,
+          label:
+            typeof patch.label === 'string' && patch.label.trim()
+              ? patch.label.trim().slice(0, 64)
+              : poly.label,
+          visible: patch.visible !== undefined ? Boolean(patch.visible) : poly.visible !== false,
+        };
+      }),
+    };
+
+    items[idx] = updatedOverlay;
+    writeFlightDxfIndex(items);
+    res.json({ ok: true, overlay: updatedOverlay });
+  });
+
+  app.get('/api/flights/:surveyId/dxf/download', requireAuth, (req: Request, res: Response) => {
+    const user = (req as unknown as { authUser: AuthTokenPayload }).authUser;
+    const surveyId = Number(req.params.surveyId);
+    if (!Number.isFinite(surveyId) || surveyId <= 0) {
+      res.status(400).json({ error: 'ID de vuelo inválido.' });
+      return;
+    }
+
+    const items = readFlightDxfIndex();
+    const item = items.find((o) => o.surveyId === surveyId);
+    if (!item) {
+      res.status(404).json({ error: 'Este vuelo no tiene archivo DXF cargado en el servidor.' });
+      return;
+    }
+
+    if (user.role !== 'admin') {
+      const sameFolder = Boolean(user.clientFolder && item.clientFolder === user.clientFolder);
+      const sameId = user.clientId !== undefined && item.clientId === user.clientId;
+      const sameCode = Boolean(user.clientCode && item.clientCode?.toLowerCase() === user.clientCode.toLowerCase());
+      if (!sameFolder && !sameId && !sameCode) {
+        res.status(403).json({
+          error: 'Acceso denegado: este archivo DXF pertenece a otro cliente.',
+          code: 'FORBIDDEN',
+        });
+        return;
+      }
+    }
+
+    const filePath = getFlightDxfFilePath(item);
+    if (!isPathInsideDir(filePath, STORAGE_DIR) || !fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'El archivo DXF físico no se encontró en el servidor.' });
+      return;
+    }
+
+    res.download(filePath, item.fileName);
+  });
+
+  app.delete('/api/flights/:surveyId/dxf', requireAuth, requireAdmin, (req: Request, res: Response) => {
+    const surveyId = Number(req.params.surveyId);
+    if (!Number.isFinite(surveyId) || surveyId <= 0) {
+      res.status(400).json({ error: 'ID de vuelo inválido.' });
+      return;
+    }
+
+    const items = readRawFlightDxfIndex();
+    const targets = items.filter((o) => o.surveyId === surveyId);
+    if (targets.length === 0) {
+      res.json({ deleted: false, surveyId });
+      return;
+    }
+
+    const remaining = items.filter((o) => o.surveyId !== surveyId);
+    writeFlightDxfIndex(remaining);
+
+    for (const target of targets) {
+      for (const candidatePath of getAllFlightDxfCandidatePaths(target)) {
+        unlinkFileSafe(candidatePath);
+      }
+      pruneEmptyFlightSubdirIfUnused(target.clientFolder, target.flightSubFolder);
+    }
+
+    res.json({ deleted: true, surveyId });
+  });
+
+  // --------------------------------------------------------------------------
   // CASCADING STORAGE CLEANUP ENDPOINT (Admin Only)
   // Deletes files, index records, and directories for deleted clients/quarries/zones/flights
   // --------------------------------------------------------------------------
@@ -2068,6 +2444,61 @@ async function startServer(): Promise<void> {
         }
       }
 
+      // 2b. Clean flight 3D DXF overlays index + files
+      const allDxfOverlays = readRawFlightDxfIndex();
+      const removedDxfs: FlightDxfOverlay[] = [];
+      const remainingDxfs: FlightDxfOverlay[] = [];
+
+      for (const o of allDxfOverlays) {
+        let shouldDelete = false;
+        if (scope === 'client') {
+          shouldDelete =
+            (clientId !== undefined && o.clientId === clientId) ||
+            (o.quarryId !== undefined && quarryIdSet.has(Number(o.quarryId))) ||
+            surveyIdSet.has(Number(o.surveyId)) ||
+            Boolean(o.clientFolder && clientFolderSet.has(o.clientFolder)) ||
+            Boolean(
+              normalizedClientCode &&
+                o.clientCode?.toLowerCase() === normalizedClientCode &&
+                (!normalizedClientName || !o.clientName || o.clientName.trim().toLowerCase() === normalizedClientName)
+            );
+        } else if (scope === 'quarry') {
+          shouldDelete =
+            (o.quarryId !== undefined && quarryIdSet.has(Number(o.quarryId))) ||
+            surveyIdSet.has(Number(o.surveyId));
+        } else {
+          shouldDelete =
+            surveyIdSet.has(Number(o.surveyId)) ||
+            Boolean(
+              o.clientFolder &&
+                o.flightSubFolder &&
+                flightDirTargets.has(`${o.clientFolder}::${o.flightSubFolder}`)
+            );
+        }
+
+        if (shouldDelete) {
+          removedDxfs.push(o);
+          if (o.clientFolder && o.flightSubFolder) {
+            addFlightTarget(o.clientFolder, o.flightSubFolder);
+          }
+          if (scope === 'client' && o.clientFolder) {
+            addClientFolderCandidate(o.clientFolder);
+          }
+        } else {
+          remainingDxfs.push(o);
+        }
+      }
+
+      if (removedDxfs.length > 0) {
+        writeFlightDxfIndex(remainingDxfs);
+      }
+
+      for (const o of removedDxfs) {
+        for (const candidatePath of getAllFlightDxfCandidatePaths(o)) {
+          if (unlinkFileSafe(candidatePath)) deletedFilesCount++;
+        }
+      }
+
       // 3. Remove directories corresponding to the deleted scope
       let deletedDirsCount = 0;
       if (scope === 'client') {
@@ -2088,8 +2519,13 @@ async function startServer(): Promise<void> {
               rem.clientFolder === target.clientFolder &&
               rem.flightSubFolder === target.flightSubFolder
           );
+          const sharedByRemainingDxf = remainingDxfs.some(
+            (rem) =>
+              rem.clientFolder === target.clientFolder &&
+              rem.flightSubFolder === target.flightSubFolder
+          );
 
-          if (!sharedByRemainingDeliverable && !sharedByRemainingPhoto) {
+          if (!sharedByRemainingDeliverable && !sharedByRemainingPhoto && !sharedByRemainingDxf) {
             if (removeDirRecursiveSafe(path.join(STORAGE_DIR, target.clientFolder, target.flightSubFolder))) {
               deletedDirsCount++;
             }
@@ -2108,6 +2544,7 @@ async function startServer(): Promise<void> {
         scope,
         removedDeliverablesCount: removedDeliverables.length,
         removedPhotosCount: removedPhotos.length,
+        removedDxfsCount: removedDxfs.length,
         deletedFilesCount,
         deletedDirsCount,
       });

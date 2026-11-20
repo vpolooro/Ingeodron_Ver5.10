@@ -216,7 +216,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0" />
                 Acceso privado segmentado por explotación y cliente
               </span>
-              <span className="code-font text-[11px] text-gray-400">Ver: 5.20</span>
+              <span className="code-font text-[11px] text-gray-400">Ver: 5.50</span>
             </div>
           </div>
 

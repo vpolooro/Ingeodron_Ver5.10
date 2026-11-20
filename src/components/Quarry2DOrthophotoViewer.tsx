@@ -39,7 +39,6 @@ import {
   sampleProfileLine,
   type ProfileSample,
   type QuarryTerrainData,
-  type StockpileFootprint,
 } from '../utils/quarryTerrainModel.ts';
 import {
   POLYGON_COLOR_PRESETS,
@@ -53,11 +52,12 @@ import {
   type DrawnShape3D,
 } from '../utils/drawing3DOverlay.ts';
 import { exportProfile2DDxf, exportProfile3DDxf } from '../utils/dxfProfileExporter.ts';
-import type { Quarry, Survey } from '../types.ts';
+import { createDxfWorldMapper } from '../utils/dxfOverlayParser.ts';
+import type { FlightDxfOverlay, Quarry, Stockpile, Survey } from '../types.ts';
 import { formatDateEu } from '../utils/dateUtils.ts';
 import { formatEsInt, formatEsNumber } from '../utils/numberFormat.ts';
 
-type BaseLayer2D = 'ortofoto' | 'hipsometria';
+type BaseLayer2D = 'ortofoto' | 'hipsometria' | 'dxf';
 type ProfilePresetId = 'A' | 'B' | 'custom';
 
 interface Quarry2DOrthophotoViewerProps {
@@ -65,8 +65,12 @@ interface Quarry2DOrthophotoViewerProps {
   activeFlight?: Survey;
   terrain: QuarryTerrainData;
   customOrthoCanvas?: HTMLCanvasElement | null;
-  showFlightStockpiles?: boolean;
-  onToggleFlightStockpiles?: () => void;
+  dxfOverlay?: FlightDxfOverlay | null;
+  dxfStockpiles?: Stockpile[];
+  showDxfOverlay?: boolean;
+  onToggleDxfOverlay?: () => void;
+  dxfOpacity?: number;
+  onChangeDxfOpacity?: (opacity: number) => void;
 }
 
 const BASE_CANVAS_PX = 800; // 2 px per meter at zoom 1.0 (800px = 400m)
@@ -107,8 +111,12 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
   activeFlight,
   terrain,
   customOrthoCanvas = null,
-  showFlightStockpiles: controlledShowFlightStockpiles,
-  onToggleFlightStockpiles,
+  dxfOverlay = null,
+  dxfStockpiles = [],
+  showDxfOverlay: controlledShowDxfOverlay,
+  onToggleDxfOverlay,
+  dxfOpacity: controlledDxfOpacity,
+  onChangeDxfOpacity,
 }) => {
   const viewerWrapperRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -123,18 +131,31 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
   const [showUtmGrid, setShowUtmGrid] = useState<boolean>(true);
   const [dockOpen, setDockOpen] = useState<boolean>(true);
 
-  const [internalShowFlightStockpiles, setInternalShowFlightStockpiles] = useState<boolean>(true);
-  const showFlightStockpiles =
-    controlledShowFlightStockpiles !== undefined
-      ? controlledShowFlightStockpiles
-      : internalShowFlightStockpiles;
-  const toggleFlightStockpiles = () => {
-    if (onToggleFlightStockpiles) {
-      onToggleFlightStockpiles();
+  const [internalShowDxfOverlay, setInternalShowDxfOverlay] = useState<boolean>(true);
+  const showDxfOverlay =
+    controlledShowDxfOverlay !== undefined ? controlledShowDxfOverlay : internalShowDxfOverlay;
+  const toggleDxfOverlay = () => {
+    if (onToggleDxfOverlay) {
+      onToggleDxfOverlay();
     } else {
-      setInternalShowFlightStockpiles((v) => !v);
+      setInternalShowDxfOverlay((v) => !v);
     }
   };
+
+  const [internalDxfOpacity, setInternalDxfOpacity] = useState<number>(0.48);
+  const dxfOpacity = controlledDxfOpacity !== undefined ? controlledDxfOpacity : internalDxfOpacity;
+  const changeDxfOpacity = (next: number) => {
+    if (onChangeDxfOpacity) {
+      onChangeDxfOpacity(next);
+    } else {
+      setInternalDxfOpacity(next);
+    }
+  };
+
+  const [selectedDxfPolyId, setSelectedDxfPolyId] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedDxfPolyId(null);
+  }, [dxfOverlay?.surveyId]);
 
   // Fullscreen state (native + CSS fallback for iframes)
   const [isNativeFullscreen, setIsNativeFullscreen] = useState<boolean>(false);
@@ -180,8 +201,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
   const [editingZonePolygonId, setEditingZonePolygonId] = useState<string | null>(null);
 
-  // Stockpile selection & live cursor readout
-  const [selectedStockpile, setSelectedStockpile] = useState<StockpileFootprint | null>(null);
+  // Live cursor readout
   const [cursorCoords, setCursorCoords] = useState<{
     easting: number;
     northing: number;
@@ -194,7 +214,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
   const [profileMode, setProfileMode] = useState<ProfilePresetId>('A');
   const [customPts, setCustomPts] = useState<Array<{ x: number; z: number }>>([]);
   const [showProfilePanel, setShowProfilePanel] = useState<boolean>(false);
-  const [showProfileIn2D, setShowProfileIn2D] = useState<boolean>(true);
+  const [showProfileIn2D, setShowProfileIn2D] = useState<boolean>(false);
   const [hoverSampleIdx, setHoverSampleIdx] = useState<number | null>(null);
   const [profileChartSize, setProfileChartSize] = useState<{ w: number; h: number }>({
     w: 760,
@@ -235,13 +255,6 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
     [zMinM]
   );
 
-  // Close selected stockpile card when flight stockpiles are hidden
-  useEffect(() => {
-    if (!showFlightStockpiles) {
-      setSelectedStockpile(null);
-    }
-  }, [showFlightStockpiles]);
-
   // Pre-rendered raster canvases (cached per terrain)
   const orthoBitmap = useMemo(() => renderOrthophotoCanvas(terrain, 640), [terrain]);
   const hypsoBitmap = useMemo(() => renderHypsometryCanvas(terrain, 640), [terrain]);
@@ -252,7 +265,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const src = baseLayer === 'ortofoto' ? customOrthoCanvas || orthoBitmap : hypsoBitmap;
+    const src = baseLayer === 'hipsometria' ? hypsoBitmap : customOrthoCanvas || orthoBitmap;
     ctx.clearRect(0, 0, BASE_CANVAS_PX, BASE_CANVAS_PX);
     ctx.drawImage(src, 0, 0, BASE_CANVAS_PX, BASE_CANVAS_PX);
   }, [baseLayer, customOrthoCanvas, orthoBitmap, hypsoBitmap]);
@@ -354,14 +367,6 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
     [worldToSvg, zoom]
   );
 
-  const focusStockpile = useCallback(
-    (sp: StockpileFootprint) => {
-      setSelectedStockpile(sp);
-      focusWorldPoint(sp.worldX, sp.worldZ, Math.max(zoom, 1.9));
-    },
-    [focusWorldPoint, zoom]
-  );
-
   const focusShape = useCallback(
     (shape: DrawnShape3D) => {
       if (shape.points.length === 0) return;
@@ -383,6 +388,54 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
     setZoom(1.0);
     setPan({ x: 0, y: 0 });
   }, []);
+
+  // Projected DXF polygons in 2D SVG coordinates
+  const mappedDxfPolygons = useMemo(() => {
+    if (!dxfOverlay) return [];
+    const mapper = createDxfWorldMapper(dxfOverlay, {
+      terrainOriginUtm: { e0: terrain.utmOriginE, n0: terrain.utmOriginN },
+      terrainSpanM: TERRAIN_SPAN_M,
+      terrainHalfM: TERRAIN_HALF_M,
+      demElevMinM: zMinM,
+      demElevMaxM: zMaxM,
+      hasExternal3D: false,
+    });
+    return dxfOverlay.polygons
+      .filter((poly) => poly.visible !== false && poly.vertices.length >= 3)
+      .map((poly) => {
+        const worldPts = poly.vertices.map((v) => mapper.mapPoint(v));
+        const svgPts = worldPts.map((w) => worldToSvg(w.worldX, w.worldZ));
+        const centroidWorld = mapper.mapPoint(poly.centroid);
+        const centroidSvg = worldToSvg(centroidWorld.worldX, centroidWorld.worldZ);
+        const surfaceTrisSvg = (poly.surfaceTriangles || []).map((tri) =>
+          tri.map((pt) => {
+            const w = mapper.mapPoint(pt);
+            return worldToSvg(w.worldX, w.worldZ);
+          })
+        );
+        const assignedStockpile = poly.stockpileId
+          ? dxfStockpiles.find((s) => s.id === poly.stockpileId)
+          : undefined;
+        return {
+          poly,
+          svgPts,
+          centroidWorld,
+          centroidSvg,
+          surfaceTrisSvg,
+          assignedStockpile,
+        };
+      });
+  }, [dxfOverlay, dxfStockpiles, terrain.utmOriginE, terrain.utmOriginN, zMinM, zMaxM, worldToSvg]);
+
+  const focusDxfPolygon = useCallback(
+    (polyId: string) => {
+      setSelectedDxfPolyId(polyId);
+      const target = mappedDxfPolygons.find((item) => item.poly.id === polyId);
+      if (!target) return;
+      focusWorldPoint(target.centroidWorld.worldX, target.centroidWorld.worldZ, Math.max(zoom, 1.85));
+    },
+    [mappedDxfPolygons, focusWorldPoint, zoom]
+  );
 
   // Update shape helper
   const updateShape = useCallback((id: string, patch: Partial<DrawnShape3D>) => {
@@ -1014,65 +1067,101 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                 );
               })}
 
-            {/* Interactive Flight Stockpile Polygons */}
-            {showFlightStockpiles &&
-              terrain.stockpiles.map((sp) => {
-                const pts = sp.polygon.map((p) => worldToSvg(p.x, p.z));
-                const polyStr = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-                const center = worldToSvg(sp.worldX, sp.worldZ);
-                const isSel = selectedStockpile?.id === sp.id;
-                return (
-                  <g
-                    key={sp.id}
-                    className={drawTool === 'orbit' ? 'pointer-events-auto cursor-pointer' : ''}
-                    onClick={(e) => {
-                      if (drawTool !== 'orbit' || (profileMode === 'custom' && showProfileIn2D)) {
-                        return;
-                      }
-                      e.stopPropagation();
-                      setSelectedStockpile(sp);
-                    }}
-                  >
-                    <polygon
-                      points={polyStr}
-                      fill={isSel ? 'rgba(251, 191, 36, 0.28)' : 'rgba(16, 185, 129, 0.20)'}
-                      stroke={isSel ? '#fbbf24' : '#34d399'}
-                      strokeWidth={2 * invScale}
-                    />
-                    <rect
-                      x={center.x - 36 * invScale}
-                      y={center.y - 12 * invScale}
-                      width={72 * invScale}
-                      height={22 * invScale}
-                      rx={4 * invScale}
-                      fill="rgba(11, 15, 23, 0.88)"
-                      stroke={isSel ? '#fbbf24' : '#10b981'}
-                      strokeWidth={1 * invScale}
-                    />
-                    <text
-                      x={center.x}
-                      y={center.y - 1.5 * invScale}
-                      textAnchor="middle"
-                      fill="#f8fafc"
-                      fontSize={9.5 * invScale}
-                      fontWeight="bold"
-                      fontFamily="monospace"
+            {/* Flight 3D DXF Stockpile Perimeters & Surfaces Overlay */}
+            {dxfOverlay &&
+              (baseLayer === 'dxf' || showDxfOverlay) &&
+              mappedDxfPolygons.map(
+                ({ poly, svgPts, centroidSvg, surfaceTrisSvg, assignedStockpile }) => {
+                  const polyStr = svgPts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                  const isSel = selectedDxfPolyId === poly.id;
+                  const titleText = assignedStockpile
+                    ? assignedStockpile.code
+                    : poly.label || `#${poly.index}`;
+                  const subText = assignedStockpile
+                    ? `${formatEsInt(assignedStockpile.netVolumeM3)} m³`
+                    : `${formatEsInt(poly.areaM2)} m²`;
+
+                  return (
+                    <g
+                      key={poly.id}
+                      className={drawTool === 'orbit' ? 'pointer-events-auto cursor-pointer' : ''}
+                      onClick={(e) => {
+                        if (drawTool !== 'orbit' || (profileMode === 'custom' && showProfileIn2D)) {
+                          return;
+                        }
+                        e.stopPropagation();
+                        setSelectedDxfPolyId(poly.id);
+                      }}
                     >
-                      {sp.code}
-                    </text>
-                    <text
-                      x={center.x}
-                      y={center.y + 8 * invScale}
-                      textAnchor="middle"
-                      fill="#34d399"
-                      fontSize={8 * invScale}
-                      fontFamily="monospace"
-                    >
-                      {formatEsInt(sp.netVolumeM3)} m³
-                    </text>
-                  </g>
-                );
-              })}
+                      {surfaceTrisSvg.length > 0 &&
+                        surfaceTrisSvg.map((tri, tIdx) => (
+                          <polygon
+                            key={tIdx}
+                            points={tri.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}
+                            fill={hexToRgba(poly.color, Math.min(0.42, dxfOpacity * 0.55))}
+                            stroke={poly.color}
+                            strokeOpacity={0.38}
+                            strokeWidth={0.75 * invScale}
+                          />
+                        ))}
+                      <polygon
+                        points={polyStr}
+                        fill={hexToRgba(
+                          poly.color,
+                          isSel ? Math.min(0.75, dxfOpacity + 0.16) : dxfOpacity
+                        )}
+                        stroke={isSel ? '#ffffff' : poly.color}
+                        strokeWidth={(isSel ? 3.2 : 2.2) * invScale}
+                      />
+                      {isSel &&
+                        svgPts.map((pt, idx) => (
+                          <circle
+                            key={idx}
+                            cx={pt.x}
+                            cy={pt.y}
+                            r={3.2 * invScale}
+                            fill="#ffffff"
+                            stroke={poly.color}
+                            strokeWidth={1.6 * invScale}
+                          />
+                        ))}
+                      <g>
+                        <rect
+                          x={centroidSvg.x - 42 * invScale}
+                          y={centroidSvg.y - 13 * invScale}
+                          width={84 * invScale}
+                          height={24 * invScale}
+                          rx={4.5 * invScale}
+                          fill="rgba(11, 15, 23, 0.92)"
+                          stroke={isSel ? '#ffffff' : poly.color}
+                          strokeWidth={(isSel ? 1.6 : 1.2) * invScale}
+                        />
+                        <text
+                          x={centroidSvg.x}
+                          y={centroidSvg.y - 2 * invScale}
+                          textAnchor="middle"
+                          fill="#ffffff"
+                          fontSize={9 * invScale}
+                          fontWeight="bold"
+                          fontFamily="monospace"
+                        >
+                          {titleText.slice(0, 14)}
+                        </text>
+                        <text
+                          x={centroidSvg.x}
+                          y={centroidSvg.y + 8 * invScale}
+                          textAnchor="middle"
+                          fill={assignedStockpile ? '#6ee7b7' : '#e2e8f0'}
+                          fontSize={7.8 * invScale}
+                          fontFamily="monospace"
+                        >
+                          {subText}
+                        </text>
+                      </g>
+                    </g>
+                  );
+                }
+              )}
 
             {/* Drawn 2D Stockpile Volumes, Zone Polygons & Measurement Lines */}
             {drawnShapes
@@ -1448,110 +1537,182 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
               </span>
             </div>
 
-            {terrain.stockpiles.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-gray-800/80 space-y-1.5">
+          </div>
+
+          {/* Flight DXF 2D Presentation & Selected DXF Stockpile Card */}
+          {dxfOverlay && (baseLayer === 'dxf' || showDxfOverlay) && mappedDxfPolygons.length > 0 && (() => {
+            const activeIdx = selectedDxfPolyId
+              ? mappedDxfPolygons.findIndex((item) => item.poly.id === selectedDxfPolyId)
+              : -1;
+            const selectedItem = activeIdx >= 0 ? mappedDxfPolygons[activeIdx] : null;
+            const selectedPoly = selectedItem?.poly ?? null;
+            const assignedStockpile = selectedItem?.assignedStockpile;
+            const token = typeof window !== 'undefined' ? localStorage.getItem('ingeodron_token') : null;
+            const photoSrc = assignedStockpile?.photoUrl
+              ? assignedStockpile.photoUrl.startsWith('data:') || assignedStockpile.photoUrl.startsWith('blob:')
+                ? assignedStockpile.photoUrl
+                : `${assignedStockpile.photoUrl}${
+                    assignedStockpile.photoUrl.includes('?') ? '&' : '?'
+                  }${token ? `token=${encodeURIComponent(token)}` : ''}`
+              : null;
+
+            const stepTour = (dir: -1 | 1) => {
+              const nextIdx =
+                activeIdx < 0
+                  ? dir > 0
+                    ? 0
+                    : mappedDxfPolygons.length - 1
+                  : (activeIdx + dir + mappedDxfPolygons.length) % mappedDxfPolygons.length;
+              focusDxfPolygon(mappedDxfPolygons[nextIdx].poly.id);
+            };
+
+            return (
+              <div className="pointer-events-auto bg-[#0b0f17]/95 border border-cyan-500/45 rounded-xl p-2.5 shadow-xl space-y-2 w-[275px] max-w-[85vw]">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-gray-400 font-semibold">
-                    Acopios vuelo ({terrain.stockpiles.length})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={toggleFlightStockpiles}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold inline-flex items-center gap-1 border transition cursor-pointer ${
-                      showFlightStockpiles
-                        ? 'bg-amber-500/20 text-amber-200 border-amber-500/45 hover:bg-amber-500/30'
-                        : 'bg-gray-800 text-gray-400 hover:text-white border-gray-700'
-                    }`}
-                    title={
-                      showFlightStockpiles
-                        ? 'Ocultar los acopios del vuelo sobre el plano 2D'
-                        : 'Mostrar los acopios del vuelo sobre el plano 2D'
-                    }
-                    aria-pressed={showFlightStockpiles}
-                  >
-                    {showFlightStockpiles ? (
-                      <Eye className="w-3 h-3" />
-                    ) : (
-                      <EyeOff className="w-3 h-3" />
-                    )}
-                    <span>{showFlightStockpiles ? 'Visibles' : 'Ocultos'}</span>
-                  </button>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 truncate">
+                      Presentación DXF 2D ({mappedDxfPolygons.length})
+                    </div>
+                    <div className="text-[10px] font-mono text-gray-400 truncate" title={dxfOverlay.fileName}>
+                      {dxfOverlay.fileName}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => stepTour(-1)}
+                      className="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 text-[10px] font-bold cursor-pointer"
+                      title="Acopio anterior en plano 2D"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => stepTour(1)}
+                      className="px-1.5 py-0.5 rounded bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/45 text-[10px] font-bold cursor-pointer"
+                      title="Siguiente acopio en plano 2D"
+                    >
+                      Tour ›
+                    </button>
+                  </div>
                 </div>
-                {showFlightStockpiles && (
-                  <div className="flex flex-wrap gap-1">
-                    {terrain.stockpiles.slice(0, 5).map((sp) => (
+
+                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                  {mappedDxfPolygons.map(({ poly, assignedStockpile: st }) => {
+                    const isSel = selectedDxfPolyId === poly.id;
+                    return (
                       <button
-                        key={sp.id}
+                        key={poly.id}
                         type="button"
-                        onClick={() => focusStockpile(sp)}
-                        title={`Enfocar ${sp.name}`}
-                        className={`px-2 py-0.5 rounded text-[10px] font-mono transition cursor-pointer ${
-                          selectedStockpile?.id === sp.id
-                            ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50'
-                            : 'bg-gray-800/90 text-gray-300 hover:bg-gray-700 border border-gray-700'
+                        onClick={() => focusDxfPolygon(poly.id)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono inline-flex items-center gap-1 border transition cursor-pointer ${
+                          isSel
+                            ? 'bg-white/15 text-white border-white/70 font-bold'
+                            : 'bg-[#111827] text-gray-300 hover:text-white border-gray-800'
                         }`}
+                        title={st ? `${st.code} · ${st.name}` : poly.label}
                       >
-                        {sp.code}
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: poly.color }}
+                        />
+                        <span className="truncate max-w-[90px]">{st ? st.code : poly.label}</span>
                       </button>
-                    ))}
+                    );
+                  })}
+                </div>
+
+                {selectedPoly && (
+                  <div className="pt-2 border-t border-gray-800 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/40"
+                            style={{ backgroundColor: selectedPoly.color }}
+                          />
+                          <span className="text-[10px] font-mono text-cyan-300 truncate">
+                            {assignedStockpile ? assignedStockpile.code : `Polígono #${selectedPoly.index}`}
+                          </span>
+                        </div>
+                        <h5 className="text-xs font-bold text-white truncate mt-0.5">
+                          {assignedStockpile ? assignedStockpile.name : selectedPoly.label}
+                        </h5>
+                        <p className="text-[10.5px] text-gray-400 truncate">
+                          {assignedStockpile
+                            ? assignedStockpile.material
+                            : `Capa CAD: ${selectedPoly.layer}`}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDxfPolyId(null)}
+                        className="p-0.5 text-gray-400 hover:text-white cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {photoSrc && (
+                      <img
+                        src={photoSrc}
+                        alt={assignedStockpile?.name || selectedPoly.label}
+                        className="w-full h-24 object-cover rounded-lg border border-gray-800"
+                      />
+                    )}
+
+                    {assignedStockpile ? (
+                      <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+                        <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                          <div className="text-[9px] text-gray-400 uppercase">Volumen</div>
+                          <div className="font-mono font-bold text-emerald-400">
+                            {formatEsNumber(assignedStockpile.netVolumeM3)} m³
+                          </div>
+                        </div>
+                        <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                          <div className="text-[9px] text-gray-400 uppercase">Tonelaje Est.</div>
+                          <div className="font-mono font-bold text-amber-300">
+                            {formatEsNumber(assignedStockpile.tonnageEst)} t
+                          </div>
+                        </div>
+                        <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                          <div className="text-[9px] text-gray-400 uppercase">Área DXF</div>
+                          <div className="font-mono text-cyan-300">
+                            {formatEsInt(selectedPoly.areaM2)} m²
+                          </div>
+                        </div>
+                        <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                          <div className="text-[9px] text-gray-400 uppercase">Z DXF</div>
+                          <div className="font-mono text-gray-200">
+                            {formatEsNumber(selectedPoly.minZ, 1)}–{formatEsNumber(selectedPoly.maxZ, 1)}m
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+                        <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                          <div className="text-[9px] text-gray-400 uppercase">Área DXF</div>
+                          <div className="font-mono text-cyan-300">
+                            {formatEsInt(selectedPoly.areaM2)} m²
+                          </div>
+                        </div>
+                        <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                          <div className="text-[9px] text-gray-400 uppercase">Perímetro 3D</div>
+                          <div className="font-mono text-gray-200">
+                            {formatEsNumber(selectedPoly.perimeterM, 1)} m
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            );
+          })()}
 
-          {/* Selected Stockpile 2D Marker Metrics Card */}
-          {showFlightStockpiles && selectedStockpile && (
-            <div className="pointer-events-auto bg-[#0b0f17]/95 border border-amber-500/40 rounded-xl p-3 shadow-xl space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                    {selectedStockpile.code}
-                  </span>
-                  <h4 className="text-xs font-bold text-white mt-1 truncate">
-                    {selectedStockpile.name}
-                  </h4>
-                  <p className="text-[11px] text-gray-400 truncate">{selectedStockpile.material}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedStockpile(null)}
-                  className="p-1 text-gray-400 hover:text-white rounded cursor-pointer"
-                  aria-label="Cerrar ficha de acopio"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                  <div className="text-[9px] text-gray-400 uppercase">Volumen</div>
-                  <div className="font-mono font-bold text-emerald-400">
-                    {formatEsNumber(selectedStockpile.netVolumeM3)} m³
-                  </div>
-                </div>
-                <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                  <div className="text-[9px] text-gray-400 uppercase">Tonelaje Est.</div>
-                  <div className="font-mono font-bold text-amber-300">
-                    {formatEsNumber(selectedStockpile.tonnageEst)} t
-                  </div>
-                </div>
-                <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                  <div className="text-[9px] text-gray-400 uppercase">Densidad</div>
-                  <div className="font-mono text-gray-200">
-                    {formatEsNumber(selectedStockpile.densityTonM3, 2)} t/m³
-                  </div>
-                </div>
-                <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                  <div className="text-[9px] text-gray-400 uppercase">Cota Cima</div>
-                  <div className="font-mono text-cyan-300">
-                    {formatEsNumber(selectedStockpile.peakElevationM, 1)} m
-                  </div>
-                </div>
-              </div>
-              <div className="text-[10px] font-mono text-gray-400 flex items-center justify-between pt-0.5">
-                <span>E {formatEsNumber(selectedStockpile.easting, 1)}</span>
-                <span>N {formatEsNumber(selectedStockpile.northing, 1)}</span>
-              </div>
+          {baseLayer === 'dxf' && !dxfOverlay && (
+            <div className="pointer-events-auto bg-[#0b0f17]/95 border border-cyan-500/40 rounded-xl p-3 text-[11px] text-cyan-200 max-w-[265px] shadow-xl">
+              Este vuelo no tiene un archivo <span className="font-mono font-bold">.DXF</span> asignado todavía. El administrador puede subirlo en <span className="font-semibold">Configuración → Perímetros DXF 3D</span>.
             </div>
           )}
 
@@ -2277,6 +2438,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                     [
                       { id: 'ortofoto', label: 'Ortofoto RGB' },
                       { id: 'hipsometria', label: 'Hipsometría Z (MDE)' },
+                      { id: 'dxf', label: 'DXF Acopios 2D' },
                     ] as Array<{ id: BaseLayer2D; label: string }>
                   ).map((m) => (
                     <button
@@ -2285,7 +2447,9 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                       onClick={() => setBaseLayer(m.id)}
                       className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                         baseLayer === m.id
-                          ? 'bg-blue-600 text-white shadow'
+                          ? m.id === 'dxf'
+                            ? 'bg-cyan-600 text-white shadow'
+                            : 'bg-blue-600 text-white shadow'
                           : 'bg-[#111827] text-gray-300 hover:text-white border border-gray-800'
                       }`}
                     >
@@ -2383,35 +2547,42 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                   </div>
                 </div>
 
-                {terrain.stockpiles.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={toggleFlightStockpiles}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 border transition cursor-pointer shrink-0 ${
-                      showFlightStockpiles
-                        ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-500/45'
-                        : 'bg-[#111827] hover:bg-gray-800 text-gray-400 hover:text-white border-gray-700'
-                    }`}
-                    title={
-                      showFlightStockpiles
-                        ? 'Ocultar los acopios del vuelo en el plano 2D'
-                        : 'Mostrar los acopios del vuelo en el plano 2D'
-                    }
-                    aria-pressed={showFlightStockpiles}
-                  >
-                    <Boxes className="w-3.5 h-3.5" />
-                    <span>
-                      {showFlightStockpiles
-                        ? `Acopios vuelo (${terrain.stockpiles.length})`
-                        : 'Acopios ocultos'}
-                    </span>
-                    {showFlightStockpiles ? (
-                      <Eye className="w-3.5 h-3.5" />
-                    ) : (
-                      <EyeOff className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {dxfOverlay && (
+                    <>
+                      {baseLayer !== 'dxf' && (
+                        <button
+                          type="button"
+                          onClick={toggleDxfOverlay}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 border transition cursor-pointer ${
+                            showDxfOverlay
+                              ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border-cyan-500/45'
+                              : 'bg-[#111827] hover:bg-gray-800 text-gray-400 hover:text-white border-gray-700'
+                          }`}
+                          title="Mostrar u ocultar perímetros DXF 3D superpuestos en el plano 2D"
+                        >
+                          {showDxfOverlay ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                          <span>DXF ({dxfOverlay.polygons.filter((p) => p.visible !== false).length})</span>
+                        </button>
+                      )}
+                      {(baseLayer === 'dxf' || showDxfOverlay) && (
+                        <label className="inline-flex items-center gap-1.5 text-[11px] text-cyan-200 bg-[#111827] border border-gray-800 rounded-lg px-2 py-1">
+                          <span className="text-[10px] text-gray-400">Opacidad DXF</span>
+                          <input
+                            type="range"
+                            min="0.15"
+                            max="0.9"
+                            step="0.05"
+                            value={dxfOpacity}
+                            onChange={(e) => changeDxfOpacity(parseFloat(e.target.value))}
+                            className="w-16 accent-cyan-500 cursor-pointer"
+                          />
+                        </label>
+                      )}
+                    </>
+                  )}
+
+                </div>
               </div>
             </div>
           )}

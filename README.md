@@ -1,4 +1,4 @@
-# INGEODRON - Portal de Gestión Topográfica, Fotogrametría y Cubicación (v5.20)
+# INGEODRON - Portal de Gestión Topográfica, Fotogrametría y Cubicación (v5.50)
 
 Plataforma profesional web de fotogrametría con dron, visor 3D interactivo de mallas y nubes de puntos, visor 2D de ortofotos georreferenciadas con curvas de nivel, cálculo volumétrico de acopios y control de acceso multi-cliente aislado.
 

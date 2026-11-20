@@ -44,7 +44,6 @@ import {
   sampleProfileLine,
   type ProfileSample,
   type QuarryTerrainData,
-  type StockpileFootprint,
 } from '../utils/quarryTerrainModel.ts';
 import { formatDateEu } from '../utils/dateUtils.ts';
 import {
@@ -67,10 +66,11 @@ import {
   type DrawnShape3D,
 } from '../utils/drawing3DOverlay.ts';
 import { exportProfile2DDxf, exportProfile3DDxf } from '../utils/dxfProfileExporter.ts';
-import type { Quarry, Survey } from '../types.ts';
+import { buildDxfOverlay3DGroup } from '../utils/dxfThreeBuilder.ts';
+import type { FlightDxfOverlay, Quarry, Stockpile, Survey } from '../types.ts';
 import { formatEsInt, formatEsNumber } from '../utils/numberFormat.ts';
 
-type RenderMode3D = 'ortofoto' | 'hipsometria' | 'curvas' | 'nube' | 'tin';
+type RenderMode3D = 'ortofoto' | 'hipsometria' | 'curvas' | 'nube' | 'tin' | 'dxf';
 type CameraPresetId = 'oblique' | 'nadir' | 'north' | 'east';
 type ProfilePresetId = 'A' | 'B' | 'custom';
 
@@ -87,8 +87,12 @@ interface Quarry3DViewerProps {
   external3DSource?: External3DSource | null;
   customOrthoCanvas?: HTMLCanvasElement | null;
   onClearExternal3D?: () => void;
-  showFlightStockpiles?: boolean;
-  onToggleFlightStockpiles?: () => void;
+  dxfOverlay?: FlightDxfOverlay | null;
+  dxfStockpiles?: Stockpile[];
+  showDxfOverlay?: boolean;
+  onToggleDxfOverlay?: () => void;
+  dxfOpacity?: number;
+  onChangeDxfOpacity?: (v: number) => void;
 }
 
 interface CameraGoal {
@@ -165,8 +169,12 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
   external3DSource = null,
   customOrthoCanvas = null,
   onClearExternal3D,
-  showFlightStockpiles: controlledShowFlightStockpiles,
-  onToggleFlightStockpiles,
+  dxfOverlay = null,
+  dxfStockpiles = [],
+  showDxfOverlay: controlledShowDxfOverlay,
+  onToggleDxfOverlay,
+  dxfOpacity: controlledDxfOpacity,
+  onChangeDxfOpacity,
 }) => {
   const viewerWrapperRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -184,21 +192,23 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
   const [customPts, setCustomPts] = useState<Array<{ x: number; z: number }>>([]);
   const [hoverSampleIdx, setHoverSampleIdx] = useState<number | null>(null);
   const [showProfilePanel, setShowProfilePanel] = useState<boolean>(false);
-  const [showProfileIn3D, setShowProfileIn3D] = useState<boolean>(true);
-  const [internalShowFlightStockpiles, setInternalShowFlightStockpiles] = useState<boolean>(true);
-  const showFlightStockpiles =
-    controlledShowFlightStockpiles !== undefined
-      ? controlledShowFlightStockpiles
-      : internalShowFlightStockpiles;
-  const toggleFlightStockpiles = () => {
-    if (onToggleFlightStockpiles) {
-      onToggleFlightStockpiles();
-    } else {
-      setInternalShowFlightStockpiles((v) => !v);
-    }
-  };
+  const [showProfileIn3D, setShowProfileIn3D] = useState<boolean>(false);
 
-  const [selectedStockpile, setSelectedStockpile] = useState<StockpileFootprint | null>(null);
+  const [internalShowDxfOverlay, setInternalShowDxfOverlay] = useState<boolean>(true);
+  const [internalDxfOpacity, setInternalDxfOpacity] = useState<number>(0.48);
+  const [selectedDxfPolyId, setSelectedDxfPolyId] = useState<string | null>(null);
+  const showDxfOverlay =
+    controlledShowDxfOverlay !== undefined ? controlledShowDxfOverlay : internalShowDxfOverlay;
+  const dxfOpacity =
+    controlledDxfOpacity !== undefined ? controlledDxfOpacity : internalDxfOpacity;
+  const toggleDxfOverlay = () => {
+    if (onToggleDxfOverlay) onToggleDxfOverlay();
+    else setInternalShowDxfOverlay((v) => !v);
+  };
+  const changeDxfOpacity = (v: number) => {
+    if (onChangeDxfOpacity) onChangeDxfOpacity(v);
+    else setInternalDxfOpacity(v);
+  };
   const [dockOpen, setDockOpen] = useState<boolean>(true);
   const [contextLost, setContextLost] = useState<boolean>(false);
 
@@ -288,7 +298,12 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
   const metersPerUnitRef = useRef<number>(1);
   const isCssFullscreenRef = useRef<boolean>(isCssFullscreen);
   const showProfileIn3DRef = useRef<boolean>(showProfileIn3D);
-  const showFlightStockpilesRef = useRef<boolean>(showFlightStockpiles);
+  const dxfOverlayRef = useRef<FlightDxfOverlay | null>(dxfOverlay);
+  const dxfStockpilesRef = useRef<Stockpile[]>(dxfStockpiles);
+  const showDxfOverlayRef = useRef<boolean>(showDxfOverlay);
+  const dxfOpacityRef = useRef<number>(dxfOpacity);
+  const selectedDxfPolyIdRef = useRef<string | null>(selectedDxfPolyId);
+  const dxfFocusTargetsRef = useRef<Map<string, { center: THREE.Vector3; span: number }>>(new Map());
 
   renderModeRef.current = renderMode;
   exaggerationRef.current = exaggeration;
@@ -298,7 +313,11 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
   externalHeightSpanRef.current = externalHeightSpan;
   profileModeRef.current = profileMode;
   showProfileIn3DRef.current = showProfileIn3D;
-  showFlightStockpilesRef.current = showFlightStockpiles;
+  dxfOverlayRef.current = dxfOverlay;
+  dxfStockpilesRef.current = dxfStockpiles;
+  showDxfOverlayRef.current = showDxfOverlay;
+  dxfOpacityRef.current = dxfOpacity;
+  selectedDxfPolyIdRef.current = selectedDxfPolyId;
   hasExternalRef.current = Boolean(external3DSource);
   pointSizeRef.current = pointSize;
   externalZUpRef.current = externalZUp;
@@ -409,17 +428,11 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
     hypsoMat: THREE.MeshStandardMaterial;
     contourBaseMat: THREE.MeshStandardMaterial;
     tinBaseMat: THREE.MeshStandardMaterial;
-    markersGroup: THREE.Group;
-    markerEntries: Array<{
-      group: THREE.Group;
-      stockpile: StockpileFootprint;
-      haloMesh: THREE.Mesh;
-      crystalMesh: THREE.Mesh;
-    }>;
     profileGroup: THREE.Group;
     profileLine: THREE.Line;
     profileRibbon: THREE.Mesh;
     drawOverlayGroup: THREE.Group;
+    dxfOverlayGroup: THREE.Group;
     refPlaneGroup: THREE.Group;
     externalHost: THREE.Group;
     externalAsset: Loaded3DAssetResult | null;
@@ -436,6 +449,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       ex: number
     ) => void;
     rebuildDrawOverlay: () => void;
+    rebuildDxfOverlay: () => void;
     isSoftwareGl: boolean;
   } | null>(null);
 
@@ -1165,79 +1179,6 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
     baseGrid.position.y = -14.2;
     scene.add(baseGrid);
 
-    // 6. Composite 3D Stockpile Markers (4 parts per pin)
-    const markersGroup = new THREE.Group();
-    const markerEntries: Array<{
-      group: THREE.Group;
-      stockpile: StockpileFootprint;
-      haloMesh: THREE.Mesh;
-      crystalMesh: THREE.Mesh;
-    }> = [];
-
-    const collarMat = new THREE.MeshStandardMaterial({
-      color: '#1e293b',
-      roughness: 0.35,
-      metalness: 0.75,
-    });
-    const mastMat = new THREE.MeshStandardMaterial({
-      color: '#cbd5e1',
-      roughness: 0.25,
-      metalness: 0.85,
-    });
-
-    terrain.stockpiles.forEach((sp) => {
-      const pinGroup = new THREE.Group();
-      pinGroup.userData.stockpileId = sp.id;
-
-      const baseRing = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.42, 10, 24), collarMat);
-      baseRing.rotation.x = Math.PI / 2;
-      baseRing.position.y = 0.42;
-      baseRing.userData.stockpileId = sp.id;
-      pinGroup.add(baseRing);
-
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.65, 11.5, 12), mastMat);
-      mast.position.y = 6.1;
-      mast.castShadow = !isSoftwareGl;
-      mast.userData.stockpileId = sp.id;
-      pinGroup.add(mast);
-
-      const crystalMat = new THREE.MeshStandardMaterial({
-        color: '#10b981',
-        emissive: '#065f46',
-        emissiveIntensity: 0.55,
-        roughness: 0.2,
-        metalness: 0.35,
-      });
-      const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(3.1, 0), crystalMat);
-      crystal.position.y = 14.2;
-      crystal.castShadow = !isSoftwareGl;
-      crystal.userData.stockpileId = sp.id;
-      pinGroup.add(crystal);
-
-      const haloMat = new THREE.MeshStandardMaterial({
-        color: '#38bdf8',
-        emissive: '#0284c7',
-        emissiveIntensity: 0.6,
-        roughness: 0.3,
-        metalness: 0.5,
-      });
-      const halo = new THREE.Mesh(new THREE.TorusGeometry(4.2, 0.35, 10, 28), haloMat);
-      halo.rotation.x = Math.PI / 2;
-      halo.position.y = 14.2;
-      halo.userData.stockpileId = sp.id;
-      pinGroup.add(halo);
-
-      pinGroup.position.set(sp.worldX, 0, sp.worldZ);
-      markersGroup.add(pinGroup);
-      markerEntries.push({
-        group: pinGroup,
-        stockpile: sp,
-        haloMesh: halo,
-        crystalMesh: crystal,
-      });
-    });
-    scene.add(markersGroup);
-
     // 7. Transverse Profile Line + Vertical Ribbon on terrain
     const profileGroup = new THREE.Group();
     const profileLineGeom = new THREE.BufferGeometry();
@@ -1267,6 +1208,10 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
     // 9. Interactive 3D Drawings Overlay (Lines, Polygons, Pins, Translucent Shading)
     const drawOverlayGroup = new THREE.Group();
     scene.add(drawOverlayGroup);
+
+    // 9b. Admin-Uploaded Flight 3D DXF Overlay (3D Perimeters, Surfaces & Stockpiles)
+    const dxfOverlayGroup = new THREE.Group();
+    scene.add(dxfOverlayGroup);
 
     // 10. Horizontal Reference Elevation / Flood / Bench-Floor Plane
     const refPlaneGroup = new THREE.Group();
@@ -1452,17 +1397,6 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
 
       // Skirt
       updateSkirtGeometry(ex);
-
-      // Stockpile 3D Pins grounded on terrain
-      markerEntries.forEach((entry) => {
-        const yGround =
-          demElevToBaseY(
-            terrain.sampleElevationAt(entry.stockpile.worldX, entry.stockpile.worldZ),
-            zMin,
-            zMax
-          ) * ex;
-        entry.group.position.set(entry.stockpile.worldX, yGround, entry.stockpile.worldZ);
-      });
     };
 
     const updateRenderVisibility = (mode: RenderMode3D) => {
@@ -1472,16 +1406,17 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       contourGroup.visible = !extLoaded && mode === 'curvas';
       pointCloud.visible = !extLoaded && mode === 'nube';
       tinWireMesh.visible = !extLoaded && mode === 'tin';
-      markersGroup.visible = !extLoaded && showFlightStockpilesRef.current;
       profileGroup.visible = !extLoaded && showProfileIn3DRef.current;
       externalHost.visible = extLoaded;
+      dxfOverlayGroup.visible =
+        Boolean(dxfOverlayRef.current) && (mode === 'dxf' || showDxfOverlayRef.current);
 
       if (extLoaded && sceneRef.current?.externalAsset) {
         sceneRef.current.externalAsset.setHypsometricMode(mode === 'hipsometria');
         sceneRef.current.externalAsset.setWireframeMode(mode === 'tin');
       }
 
-      if (mode === 'ortofoto') terrainMesh.material = orthoMat;
+      if (mode === 'ortofoto' || mode === 'dxf') terrainMesh.material = orthoMat;
       else if (mode === 'hipsometria') terrainMesh.material = hypsoMat;
       else if (mode === 'curvas') terrainMesh.material = contourBaseMat;
       else if (mode === 'tin') terrainMesh.material = tinBaseMat;
@@ -1634,6 +1569,35 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
         }
       );
       drawOverlayGroup.add(built);
+    };
+
+    const rebuildDxfOverlay = () => {
+      while (dxfOverlayGroup.children.length > 0) {
+        const child = dxfOverlayGroup.children[0];
+        dxfOverlayGroup.remove(child);
+        disposeObject3DTree(child);
+      }
+      dxfFocusTargetsRef.current.clear();
+
+      const ov = dxfOverlayRef.current;
+      if (!ov) return;
+
+      const built = buildDxfOverlay3DGroup(ov, dxfStockpilesRef.current, {
+        exaggeration: exaggerationRef.current,
+        opacity: dxfOpacityRef.current,
+        selectedPolygonId: selectedDxfPolyIdRef.current,
+        terrainOriginUtm: { e0: terrain.utmOriginE, n0: terrain.utmOriginN },
+        demElevMinM: demElevationBoundsRef.current.minM,
+        demElevMaxM: demElevationBoundsRef.current.maxM,
+        cadTransform: sceneRef.current?.externalAsset?.cadTransform ?? null,
+        hasExternal3D: hasExternalRef.current,
+        externalHeightSpan: externalHeightSpanRef.current,
+      });
+
+      dxfOverlayGroup.add(built.group);
+      dxfFocusTargetsRef.current = built.focusTargets;
+      dxfOverlayGroup.visible =
+        renderModeRef.current === 'dxf' || showDxfOverlayRef.current;
     };
 
     const onPointerDown = (e: PointerEvent) => {
@@ -1810,32 +1774,31 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
 
       raycaster.setFromCamera(pointer, camera);
 
-      // 1. Check 3D Stockpile markers first (only when flight stockpiles are visible)
-      const pinHits =
-        markersGroup.visible && showFlightStockpilesRef.current
-          ? raycaster.intersectObjects(markersGroup.children, true)
-          : [];
-      if (pinHits.length > 0) {
-        const spId = pinHits[0].object.userData.stockpileId as number | undefined;
-        const found = terrain.stockpiles.find((s) => s.id === spId);
-        if (found) {
-          setSelectedStockpile(found);
-          const yGround =
-            demElevToBaseY(
-              terrain.sampleElevationAt(found.worldX, found.worldZ),
-              demElevationBoundsRef.current.minM,
-              demElevationBoundsRef.current.maxM
-            ) * exaggerationRef.current;
-          cameraGoal.target.set(found.worldX, yGround + 4, found.worldZ);
-          cameraGoal.pos.set(found.worldX + 58, yGround + 52, found.worldZ + 62);
-          cameraGoal.active = true;
-          requestRender();
+      // 1. Check 3D DXF Stockpile polygons first when DXF overlay is visible
+      const dxfHits = dxfOverlayGroup.visible
+        ? raycaster.intersectObjects(dxfOverlayGroup.children, true)
+        : [];
+      if (dxfHits.length > 0) {
+        const polyId = dxfHits[0].object.userData.dxfPolygonId as string | undefined;
+        if (polyId) {
+          setSelectedDxfPolyId(polyId);
+          const focus = dxfFocusTargetsRef.current.get(polyId);
+          if (focus) {
+            cameraGoal.target.copy(focus.center);
+            cameraGoal.pos.set(
+              focus.center.x + focus.span * 1.15,
+              focus.center.y + focus.span * 0.9 + 16,
+              focus.center.z + focus.span * 1.2
+            );
+            cameraGoal.active = true;
+            requestRender();
+          }
           return;
         }
       }
 
       // 2. If in custom profile mode, allow clicking 2 terrain points
-      if (profileModeRef.current === 'custom') {
+      if (profileModeRef.current === 'custom' && showProfileIn3DRef.current) {
         const terrainHits = raycaster.intersectObject(terrainMesh, false);
         if (terrainHits.length > 0) {
           const pt = terrainHits[0].point;
@@ -1914,12 +1877,11 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       hypsoMat,
       contourBaseMat,
       tinBaseMat,
-      markersGroup,
-      markerEntries,
       profileGroup,
       profileLine,
       profileRibbon,
       drawOverlayGroup,
+      dxfOverlayGroup,
       refPlaneGroup,
       externalHost,
       externalAsset: null,
@@ -1932,10 +1894,12 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       updateRenderVisibility,
       updateProfileGeometry,
       rebuildDrawOverlay,
+      rebuildDxfOverlay,
       isSoftwareGl,
     };
 
     rebuildDrawOverlay();
+    rebuildDxfOverlay();
     requestRender();
 
     return () => {
@@ -1949,6 +1913,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
       renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
       disposeObject3DTree(drawOverlayGroup);
+      disposeObject3DTree(dxfOverlayGroup);
       disposeObject3DTree(refPlaneGroup);
       if (sceneRef.current?.externalAsset) {
         sceneRef.current.externalAsset.dispose();
@@ -1979,12 +1944,6 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       skirtMat.dispose();
       pointSpriteTex.dispose();
       pointMat.dispose();
-      collarMat.dispose();
-      mastMat.dispose();
-      markerEntries.forEach((m) => {
-        (m.haloMesh.material as THREE.Material).dispose();
-        (m.crystalMesh.material as THREE.Material).dispose();
-      });
       renderer.dispose();
       sceneRef.current = null;
     };
@@ -2065,6 +2024,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       setExternalInfo(null);
       ctx.updateRenderVisibility(renderModeRef.current);
       ctx.rebuildDrawOverlay();
+      ctx.rebuildDxfOverlay();
       ctx.requestRender();
       return;
     }
@@ -2107,6 +2067,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
         setExternalLoading(false);
         ctx.updateRenderVisibility(renderModeRef.current);
         ctx.rebuildDrawOverlay();
+        ctx.rebuildDxfOverlay();
 
         // Smoothly reframe oblique view only when loading a new 3D asset
         if (isNewSource) {
@@ -2169,16 +2130,13 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
     ctx.requestRender();
   }, [customOrthoCanvas]);
 
-  // React to renderMode, 3D profile & flight stockpiles visibility change
+  // React to renderMode, 3D profile & DXF overlay visibility change
   useEffect(() => {
-    if (!showFlightStockpiles) {
-      setSelectedStockpile(null);
-    }
     const ctx = sceneRef.current;
     if (!ctx) return;
     ctx.updateRenderVisibility(renderMode);
     ctx.requestRender();
-  }, [renderMode, showProfileIn3D, showFlightStockpiles]);
+  }, [renderMode, showProfileIn3D, showDxfOverlay, dxfOverlay]);
 
   // React to exaggeration and Z range change
   useEffect(() => {
@@ -2190,8 +2148,22 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
     }
     ctx.updateProfileGeometry(activeProfileSegment.p0, activeProfileSegment.p1, exaggeration);
     ctx.rebuildDrawOverlay();
+    ctx.rebuildDxfOverlay();
     ctx.requestRender();
   }, [exaggeration, activeProfileSegment, zMinM, zMaxM]);
+
+  // Rebuild DXF 3D overlay whenever flight DXF, stockpiles, opacity, or selection changes
+  useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    ctx.rebuildDxfOverlay();
+    ctx.updateRenderVisibility(renderModeRef.current);
+    ctx.requestRender();
+  }, [dxfOverlay, dxfStockpiles, dxfOpacity, selectedDxfPolyId]);
+
+  useEffect(() => {
+    setSelectedDxfPolyId(null);
+  }, [dxfOverlay?.surveyId]);
 
   // Rebuild 3D drawing overlay whenever shapes, pins, active style, density, or selection change
   useEffect(() => {
@@ -2217,23 +2189,6 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
     ctx.refPlaneGroup.position.y = baseY * exaggeration;
     ctx.requestRender();
   }, [refPlaneEnabled, refPlaneElevM, exaggeration, zMinM, zMaxM, external3DSource, externalHeightSpan]);
-
-  // Highlight selected 3D stockpile marker
-  useEffect(() => {
-    const ctx = sceneRef.current;
-    if (!ctx) return;
-    ctx.markerEntries.forEach((entry) => {
-      const isSelected = selectedStockpile?.id === entry.stockpile.id;
-      const haloMat = entry.haloMesh.material as THREE.MeshStandardMaterial;
-      const crystalMat = entry.crystalMesh.material as THREE.MeshStandardMaterial;
-      haloMat.color.set(isSelected ? '#fbbf24' : '#38bdf8');
-      haloMat.emissive.set(isSelected ? '#d97706' : '#0284c7');
-      crystalMat.color.set(isSelected ? '#fbbf24' : '#10b981');
-      crystalMat.emissive.set(isSelected ? '#b45309' : '#065f46');
-      entry.group.scale.setScalar(isSelected ? 1.25 : 1.0);
-    });
-    ctx.requestRender();
-  }, [selectedStockpile]);
 
   // Apply Camera Preset smoothly
   const applyCameraPreset = (preset: CameraPresetId) => {
@@ -2263,21 +2218,22 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
     ctx.requestRender();
   };
 
-  // Focus camera on stockpile from list or marker
-  const focusStockpile = (sp: StockpileFootprint) => {
-    setSelectedStockpile(sp);
+  // Focus camera on a DXF 3D polygon & open its stockpile inspection card
+  const focusDxfPolygon = (polyId: string) => {
+    setSelectedDxfPolyId(polyId);
     const ctx = sceneRef.current;
     if (!ctx) return;
-    const yGround =
-      demElevToBaseY(
-        terrain.sampleElevationAt(sp.worldX, sp.worldZ),
-        demElevationBounds.minM,
-        demElevationBounds.maxM
-      ) * exaggeration;
-    ctx.cameraGoal.target.set(sp.worldX, yGround + 4, sp.worldZ);
-    ctx.cameraGoal.pos.set(sp.worldX + 58, yGround + 52, sp.worldZ + 62);
-    ctx.cameraGoal.active = true;
-    ctx.requestRender();
+    const focus = dxfFocusTargetsRef.current.get(polyId);
+    if (focus) {
+      ctx.cameraGoal.target.copy(focus.center);
+      ctx.cameraGoal.pos.set(
+        focus.center.x + focus.span * 1.15,
+        focus.center.y + focus.span * 0.9 + 16,
+        focus.center.z + focus.span * 1.2
+      );
+      ctx.cameraGoal.active = true;
+      ctx.requestRender();
+    }
   };
 
   // Observe profile chart container so the SVG spans 100% of its section width with crisp 1:1 text
@@ -2492,6 +2448,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                       ctx.externalAsset.setWireframeMode(renderMode === 'tin');
                       syncAutoZFromExternalAsset(ctx.externalAsset);
                       ctx.rebuildDrawOverlay();
+                      ctx.rebuildDxfOverlay();
                       ctx.requestRender();
                     }
                   }}
@@ -2542,120 +2499,187 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
             </div>
           )}
 
-          {!external3DSource && terrain.stockpiles.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-gray-800/80 space-y-1.5">
+        </div>
+
+        {/* Flight DXF 3D Presentation & Selected DXF Stockpile Card */}
+        {dxfOverlay && (renderMode === 'dxf' || showDxfOverlay) && (() => {
+          const visiblePolys = dxfOverlay.polygons.filter((p) => p.visible !== false);
+          if (visiblePolys.length === 0) return null;
+          const activeIdx = selectedDxfPolyId
+            ? visiblePolys.findIndex((p) => p.id === selectedDxfPolyId)
+            : -1;
+          const selectedPoly = activeIdx >= 0 ? visiblePolys[activeIdx] : null;
+          const assignedStockpile = selectedPoly?.stockpileId
+            ? dxfStockpiles.find((s) => s.id === selectedPoly.stockpileId)
+            : undefined;
+          const token = typeof window !== 'undefined' ? localStorage.getItem('ingeodron_token') : null;
+          const photoSrc = assignedStockpile?.photoUrl
+            ? assignedStockpile.photoUrl.startsWith('data:') || assignedStockpile.photoUrl.startsWith('blob:')
+              ? assignedStockpile.photoUrl
+              : `${assignedStockpile.photoUrl}${
+                  assignedStockpile.photoUrl.includes('?') ? '&' : '?'
+                }${token ? `token=${encodeURIComponent(token)}` : ''}`
+            : null;
+
+          const stepTour = (dir: -1 | 1) => {
+            const nextIdx =
+              activeIdx < 0
+                ? dir > 0
+                  ? 0
+                  : visiblePolys.length - 1
+                : (activeIdx + dir + visiblePolys.length) % visiblePolys.length;
+            focusDxfPolygon(visiblePolys[nextIdx].id);
+          };
+
+          return (
+            <div className="pointer-events-auto bg-[#0b0f17]/95 border border-cyan-500/45 rounded-xl p-2.5 shadow-xl space-y-2 w-[275px] max-w-[85vw]">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] text-gray-400 font-semibold">
-                  Acopios vuelo ({terrain.stockpiles.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={toggleFlightStockpiles}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold inline-flex items-center gap-1 border transition cursor-pointer ${
-                    showFlightStockpiles
-                      ? 'bg-amber-500/20 text-amber-200 border-amber-500/45 hover:bg-amber-500/30'
-                      : 'bg-gray-800 text-gray-400 hover:text-white border-gray-700'
-                  }`}
-                  title={
-                    showFlightStockpiles
-                      ? 'Ocultar los acopios del vuelo en el modelo 3D'
-                      : 'Mostrar los acopios del vuelo en el modelo 3D'
-                  }
-                  aria-pressed={showFlightStockpiles}
-                >
-                  {showFlightStockpiles ? (
-                    <Eye className="w-3 h-3" />
-                  ) : (
-                    <EyeOff className="w-3 h-3" />
-                  )}
-                  <span>{showFlightStockpiles ? 'Visibles' : 'Ocultos'}</span>
-                </button>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 truncate">
+                    Presentación DXF 3D ({visiblePolys.length})
+                  </div>
+                  <div className="text-[10px] font-mono text-gray-400 truncate" title={dxfOverlay.fileName}>
+                    {dxfOverlay.fileName}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => stepTour(-1)}
+                    className="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 text-[10px] font-bold cursor-pointer"
+                    title="Acopio anterior en presentación 3D"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => stepTour(1)}
+                    className="px-1.5 py-0.5 rounded bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/45 text-[10px] font-bold cursor-pointer"
+                    title="Siguiente acopio en presentación 3D"
+                  >
+                    Tour ›
+                  </button>
+                </div>
               </div>
-              {showFlightStockpiles && (
-                <div className="flex flex-wrap gap-1">
-                  {terrain.stockpiles.slice(0, 5).map((sp) => (
+
+              <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                {visiblePolys.map((poly) => {
+                  const st = poly.stockpileId
+                    ? dxfStockpiles.find((s) => s.id === poly.stockpileId)
+                    : undefined;
+                  const isSel = selectedDxfPolyId === poly.id;
+                  return (
                     <button
-                      key={sp.id}
+                      key={poly.id}
                       type="button"
-                      onClick={() => focusStockpile(sp)}
-                      title={`Enfocar ${sp.name}`}
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition cursor-pointer ${
-                        selectedStockpile?.id === sp.id
-                          ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50'
-                          : 'bg-gray-800/90 text-gray-300 hover:bg-gray-700 border border-gray-700'
+                      onClick={() => focusDxfPolygon(poly.id)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono inline-flex items-center gap-1 border transition cursor-pointer ${
+                        isSel
+                          ? 'bg-white/15 text-white border-white/70 font-bold'
+                          : 'bg-[#111827] text-gray-300 hover:text-white border-gray-800'
                       }`}
+                      title={st ? `${st.code} · ${st.name}` : poly.label}
                     >
-                      {sp.code}
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: poly.color }}
+                      />
+                      <span className="truncate max-w-[90px]">{st ? st.code : poly.label}</span>
                     </button>
-                  ))}
+                  );
+                })}
+              </div>
+
+              {selectedPoly && (
+                <div className="pt-2 border-t border-gray-800 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/40"
+                          style={{ backgroundColor: selectedPoly.color }}
+                        />
+                        <span className="text-[10px] font-mono text-cyan-300 truncate">
+                          {assignedStockpile ? assignedStockpile.code : `Polígono #${selectedPoly.index}`}
+                        </span>
+                      </div>
+                      <h5 className="text-xs font-bold text-white truncate mt-0.5">
+                        {assignedStockpile ? assignedStockpile.name : selectedPoly.label}
+                      </h5>
+                      <p className="text-[10.5px] text-gray-400 truncate">
+                        {assignedStockpile
+                          ? assignedStockpile.material
+                          : `Capa CAD: ${selectedPoly.layer}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDxfPolyId(null)}
+                      className="p-0.5 text-gray-400 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {photoSrc && (
+                    <img
+                      src={photoSrc}
+                      alt={assignedStockpile?.name || selectedPoly.label}
+                      className="w-full h-24 object-cover rounded-lg border border-gray-800"
+                    />
+                  )}
+
+                  {assignedStockpile ? (
+                    <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+                      <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                        <div className="text-[9px] text-gray-400 uppercase">Volumen</div>
+                        <div className="font-mono font-bold text-emerald-400">
+                          {formatEsNumber(assignedStockpile.netVolumeM3)} m³
+                        </div>
+                      </div>
+                      <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                        <div className="text-[9px] text-gray-400 uppercase">Tonelaje Est.</div>
+                        <div className="font-mono font-bold text-amber-300">
+                          {formatEsNumber(assignedStockpile.tonnageEst)} t
+                        </div>
+                      </div>
+                      <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                        <div className="text-[9px] text-gray-400 uppercase">Área DXF</div>
+                        <div className="font-mono text-cyan-300">
+                          {formatEsInt(selectedPoly.areaM2)} m²
+                        </div>
+                      </div>
+                      <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                        <div className="text-[9px] text-gray-400 uppercase">Z DXF</div>
+                        <div className="font-mono text-gray-200">
+                          {formatEsNumber(selectedPoly.minZ, 1)}–{formatEsNumber(selectedPoly.maxZ, 1)}m
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+                      <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                        <div className="text-[9px] text-gray-400 uppercase">Área DXF</div>
+                        <div className="font-mono text-cyan-300">
+                          {formatEsInt(selectedPoly.areaM2)} m²
+                        </div>
+                      </div>
+                      <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
+                        <div className="text-[9px] text-gray-400 uppercase">Perímetro 3D</div>
+                        <div className="font-mono text-gray-200">
+                          {formatEsNumber(selectedPoly.perimeterM, 1)} m
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
-
-        {/* Selected Stockpile 3D Marker Metrics Card */}
-        {showFlightStockpiles && selectedStockpile && (
-          <div className="pointer-events-auto bg-[#0b0f17]/95 border border-amber-500/40 rounded-xl p-3 shadow-xl space-y-2">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                  {selectedStockpile.code}
-                </span>
-                <h4 className="text-xs font-bold text-white mt-1 truncate">
-                  {selectedStockpile.name}
-                </h4>
-                <p className="text-[11px] text-gray-400 truncate">{selectedStockpile.material}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedStockpile(null)}
-                className="p-1 text-gray-400 hover:text-white rounded cursor-pointer"
-                aria-label="Cerrar ficha de acopio"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-              <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                <div className="text-[9px] text-gray-400 uppercase">Volumen</div>
-                <div className="font-mono font-bold text-emerald-400">
-                  {formatEsNumber(selectedStockpile.netVolumeM3)} m³
-                </div>
-              </div>
-              <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                <div className="text-[9px] text-gray-400 uppercase">Tonelaje Est.</div>
-                <div className="font-mono font-bold text-amber-300">
-                  {formatEsNumber(selectedStockpile.tonnageEst)} t
-                </div>
-              </div>
-              <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                <div className="text-[9px] text-gray-400 uppercase">Densidad</div>
-                <div className="font-mono text-gray-200">
-                  {formatEsNumber(selectedStockpile.densityTonM3, 2)} t/m³
-                </div>
-              </div>
-              <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
-                <div className="text-[9px] text-gray-400 uppercase">Cota Cima</div>
-                <div className="font-mono text-cyan-300">
-                  {formatEsNumber(
-                    demElevToViewerZ(
-                      selectedStockpile.peakElevationM,
-                      demElevationBounds.minM,
-                      demElevationBounds.maxM,
-                      zMinM,
-                      zMaxM
-                    ),
-                    1
-                  )}{' '}
-                  m
-                </div>
-              </div>
-            </div>
-            <div className="text-[10px] font-mono text-gray-400 flex items-center justify-between pt-0.5">
-              <span>E {formatEsNumber(selectedStockpile.easting, 1)}</span>
-              <span>N {formatEsNumber(selectedStockpile.northing, 1)}</span>
-            </div>
+          );
+        })()}
+        {renderMode === 'dxf' && !dxfOverlay && (
+          <div className="pointer-events-auto bg-[#0b0f17]/95 border border-cyan-500/40 rounded-xl p-3 text-[11px] text-cyan-200 max-w-[265px] shadow-xl">
+            Este vuelo no tiene un archivo <span className="font-mono font-bold">.DXF</span> asignado todavía. El administrador puede subirlo en <span className="font-semibold">Configuración → Perímetros DXF 3D</span>.
           </div>
         )}
         {/* Drawn 3D Stockpile Volumes, Polygons, Measurements & Georeferenced Pins List */}
@@ -3487,6 +3511,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                     { id: 'curvas', label: 'Curvas 3D' },
                     { id: 'nube', label: 'Nube de Puntos' },
                     { id: 'tin', label: 'Malla TIN' },
+                    { id: 'dxf', label: 'DXF Acopios 3D' },
                   ] as Array<{ id: RenderMode3D; label: string }>
                 ).map((m) => (
                   <button
@@ -3495,7 +3520,9 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                     onClick={() => setRenderMode(m.id)}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                       renderMode === m.id
-                        ? 'bg-blue-600 text-white shadow'
+                        ? m.id === 'dxf'
+                          ? 'bg-cyan-600 text-white shadow'
+                          : 'bg-blue-600 text-white shadow'
                         : 'bg-[#111827] text-gray-300 hover:text-white border border-gray-800'
                     }`}
                   >
@@ -3579,35 +3606,42 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                 )}
               </div>
 
-              {!external3DSource && terrain.stockpiles.length > 0 && (
-                <button
-                  type="button"
-                  onClick={toggleFlightStockpiles}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 border transition cursor-pointer shrink-0 ${
-                    showFlightStockpiles
-                      ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-500/45'
-                      : 'bg-[#111827] hover:bg-gray-800 text-gray-400 hover:text-white border-gray-700'
-                  }`}
-                  title={
-                    showFlightStockpiles
-                      ? 'Ocultar los acopios del vuelo en el modelo 3D'
-                      : 'Mostrar los acopios del vuelo en el modelo 3D'
-                  }
-                  aria-pressed={showFlightStockpiles}
-                >
-                  <Boxes className="w-3.5 h-3.5" />
-                  <span>
-                    {showFlightStockpiles
-                      ? `Acopios vuelo (${terrain.stockpiles.length})`
-                      : 'Acopios ocultos'}
-                  </span>
-                  {showFlightStockpiles ? (
-                    <Eye className="w-3.5 h-3.5" />
-                  ) : (
-                    <EyeOff className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              )}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {dxfOverlay && (
+                  <>
+                    {renderMode !== 'dxf' && (
+                      <button
+                        type="button"
+                        onClick={toggleDxfOverlay}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 border transition cursor-pointer ${
+                          showDxfOverlay
+                            ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border-cyan-500/45'
+                            : 'bg-[#111827] hover:bg-gray-800 text-gray-400 hover:text-white border-gray-700'
+                        }`}
+                        title="Mostrar u ocultar perímetros DXF 3D superpuestos"
+                      >
+                        {showDxfOverlay ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        <span>DXF 3D ({dxfOverlay.polygons.filter((p) => p.visible !== false).length})</span>
+                      </button>
+                    )}
+                    {(renderMode === 'dxf' || showDxfOverlay) && (
+                      <label className="inline-flex items-center gap-1.5 text-[11px] text-cyan-200 bg-[#111827] border border-gray-800 rounded-lg px-2 py-1">
+                        <span className="text-[10px] text-gray-400">Opacidad DXF</span>
+                        <input
+                          type="range"
+                          min="0.15"
+                          max="0.9"
+                          step="0.05"
+                          value={dxfOpacity}
+                          onChange={(e) => changeDxfOpacity(parseFloat(e.target.value))}
+                          className="w-16 accent-cyan-500 cursor-pointer"
+                        />
+                      </label>
+                    )}
+                  </>
+                )}
+
+              </div>
             </div>
           </div>
         )}

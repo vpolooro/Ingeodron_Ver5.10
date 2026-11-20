@@ -45,7 +45,7 @@ import { MultiFlightSelect } from './components/MultiFlightSelect.tsx';
 import { MaterialDensitySelector } from './components/MaterialDensitySelector.tsx';
 import { AdminParametersPanel } from './components/AdminParametersPanel.tsx';
 import { saveMaterialDensityCatalog } from './utils/materialDensities.ts';
-import { AppUser, Client, Quarry, Zone, Survey, Stockpile, Deliverable, SurveyStatus } from './types.ts';
+import { AppUser, Client, Quarry, Zone, Survey, Stockpile, Deliverable, FlightDxfOverlay, SurveyStatus } from './types.ts';
 import { generateZonePdfReport, PdfReportType } from './utils/pdfReportGenerator.ts';
 import { localDataStore } from './utils/localDataStore.ts';
 import { buildClientFolderName, buildFlightSubFolderName } from './utils/folderUtils.ts';
@@ -281,6 +281,8 @@ export default function App() {
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [stockpiles, setStockpiles] = useState<Stockpile[]>([]);
   const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
+  const [flightDxfOverlays, setFlightDxfOverlays] = useState<FlightDxfOverlay[]>([]);
+  const [adminSettingsSection, setAdminSettingsSection] = useState<'materials' | 'dxf'>('materials');
 
   // Active flight selection & Filters
   const [activeFlightId, setActiveFlightId] = useState<number | 'all' | 'multi'>(0);
@@ -646,6 +648,18 @@ export default function App() {
         // Fallback silently to local material catalog when offline
       }
 
+      try {
+        const dxfResp = await fetch('/api/flights/dxf-overlays', {
+          headers: getAuthHeaders(),
+        });
+        if (dxfResp.ok) {
+          const dxfPayload = await dxfResp.json();
+          setFlightDxfOverlays(Array.isArray(dxfPayload?.overlays) ? dxfPayload.overlays : []);
+        }
+      } catch {
+        // Fallback silently if DXF overlay endpoint is unavailable
+      }
+
       const serverIds = new Set(serverDeliverables.map((d) => d.id));
       const dData = [...serverDeliverables, ...localDeliverables.filter((d) => !serverIds.has(d.id))];
 
@@ -844,6 +858,7 @@ export default function App() {
     setActiveZoneFilter('all');
     setFlightStatusFilter('all');
     setSelectedHeaderFlightIds([]);
+    setFlightDxfOverlays([]);
     setActiveTab('tab-flights');
   };
 
@@ -1323,6 +1338,11 @@ export default function App() {
     if (!viewer3DQuarry) return [];
     return deliverables.filter((d) => d.quarryId === viewer3DQuarry.id);
   }, [deliverables, viewer3DQuarry]);
+
+  const viewer3DDxfOverlay = useMemo(() => {
+    if (!viewer3DFlight) return null;
+    return flightDxfOverlays.find((o) => o.surveyId === viewer3DFlight.id) || null;
+  }, [flightDxfOverlays, viewer3DFlight]);
 
   // Auto-switch from "Todas las explotaciones" / "Todos los vuelos" / multi-flight to a single quarry/flight on entering Visor 3D
   useEffect(() => {
@@ -3044,7 +3064,7 @@ export default function App() {
                 <span className="text-blue-500">INGEO</span>
                 <span className="text-amber-500">DRON</span>
               </span>
-              <span className="text-cyan-400 font-semibold">v5.20</span>
+              <span className="text-cyan-400 font-semibold">v5.50</span>
             </div>
           </div>
         </aside>
@@ -4728,9 +4748,14 @@ export default function App() {
                 stockpiles={viewer3DStockpiles}
                 activeFlight={viewer3DFlight}
                 deliverables={viewer3DDeliverables}
+                dxfOverlay={viewer3DDxfOverlay}
                 isAdmin={authenticatedRole === 'admin' && currentUserRole === 'admin'}
                 preferredDeliverableId={lastUploadedDeliverableId}
                 onOpenUploadModal={() => handleOpenUploadDeliverableModal('mesh_obj')}
+                onOpenDxfSettings={() => {
+                  setAdminSettingsSection('dxf');
+                  setActiveTab('tab-settings');
+                }}
               />
             )
           }
@@ -5026,7 +5051,25 @@ export default function App() {
 
           {/* TAB 6: CONFIGURACIÓN DE PARÁMETROS Y MATERIALES (Admin Only) */}
           {authenticatedRole === 'admin' && currentUserRole === 'admin' && activeTab === 'tab-settings' && (
-            <AdminParametersPanel onNotify={showToast} />
+            <AdminParametersPanel
+              onNotify={showToast}
+              clients={clients}
+              quarries={quarries}
+              zones={zones}
+              surveys={surveys}
+              stockpiles={stockpiles}
+              dxfOverlays={flightDxfOverlays}
+              activeClient={activeClient}
+              activeQuarry={activeQuarry}
+              activeFlight={activeFlight}
+              initialSection={adminSettingsSection}
+              onDxfOverlaySaved={(ov) =>
+                setFlightDxfOverlays((prev) => [ov, ...prev.filter((x) => x.surveyId !== ov.surveyId)])
+              }
+              onDxfOverlayDeleted={(sid) =>
+                setFlightDxfOverlays((prev) => prev.filter((x) => x.surveyId !== sid))
+              }
+            />
           )}
         </main>
       </div>

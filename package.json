@@ -1,7 +1,7 @@
 {
   "name": "igeodron-portal",
   "private": true,
-  "version": "5.20.0",
+  "version": "5.50.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

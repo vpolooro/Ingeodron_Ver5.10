@@ -52,6 +52,15 @@ export interface Loaded3DAssetResult {
   rawBoundsMax: THREE.Vector3;
   normalizedHeightSpan: number;
   hasTextures: boolean;
+  cadTransform: {
+    sourceOrigin: { x: number; y: number; z: number };
+    center: { x: number; y: number; z: number };
+    boxMinY: number;
+    scaleFactor: number;
+    zUp: boolean;
+    cadMin: { x: number; y: number; z: number };
+    cadMax: { x: number; y: number; z: number };
+  };
   setHypsometricMode: (enabled: boolean) => void;
   setWireframeMode: (enabled: boolean) => void;
   setZUpOrientation: (zUp: boolean) => void;
@@ -730,6 +739,15 @@ export async function load3DAssetFromUrl(
   const rawBoundsMin = new THREE.Vector3();
   const rawBoundsMax = new THREE.Vector3();
   let normalizedHeightSpan = 40;
+  const cadTransform = {
+    sourceOrigin: { x: 0, y: 0, z: 0 },
+    center: { x: 0, y: 0, z: 0 },
+    boxMinY: 0,
+    scaleFactor: 1,
+    zUp: defaultZUp,
+    cadMin: { x: 0, y: 0, z: 0 },
+    cadMax: { x: 0, y: 0, z: 0 },
+  };
 
   const applyTransformAndColors = (zUp: boolean) => {
     contentHolder.rotation.set(zUp ? -Math.PI / 2 : 0, 0, 0);
@@ -756,6 +774,35 @@ export async function load3DAssetFromUrl(
     const maxHoriz = Math.max(size.x, size.z, 1e-4);
     const targetSpan = TERRAIN_SPAN_M * 0.92;
     const scaleFactor = targetSpan / maxHoriz;
+
+    cadTransform.sourceOrigin = { x: sourceOrigin.x, y: sourceOrigin.y, z: sourceOrigin.z };
+    cadTransform.center = { x: center.x, y: center.y, z: center.z };
+    cadTransform.boxMinY = box.min.y;
+    cadTransform.scaleFactor = scaleFactor;
+    cadTransform.zUp = zUp;
+    if (zUp) {
+      cadTransform.cadMin = {
+        x: box.min.x + sourceOrigin.x,
+        y: -box.max.z + sourceOrigin.y,
+        z: box.min.y + sourceOrigin.z,
+      };
+      cadTransform.cadMax = {
+        x: box.max.x + sourceOrigin.x,
+        y: -box.min.z + sourceOrigin.y,
+        z: box.max.y + sourceOrigin.z,
+      };
+    } else {
+      cadTransform.cadMin = {
+        x: box.min.x + sourceOrigin.x,
+        y: box.min.y + sourceOrigin.y,
+        z: box.min.z + sourceOrigin.z,
+      };
+      cadTransform.cadMax = {
+        x: box.max.x + sourceOrigin.x,
+        y: box.max.y + sourceOrigin.y,
+        z: box.max.z + sourceOrigin.z,
+      };
+    }
 
     contentHolder.scale.setScalar(scaleFactor);
     contentHolder.position.set(
@@ -891,6 +938,7 @@ export async function load3DAssetFromUrl(
     get normalizedHeightSpan() {
       return normalizedHeightSpan;
     },
+    cadTransform,
     hasTextures,
     setHypsometricMode: (enabled: boolean) => {
       meshes.forEach((m) => {

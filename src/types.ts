@@ -106,3 +106,56 @@ export interface Deliverable {
   isServerStored?: boolean;
   createdAt?: string;
 }
+
+export interface DxfPoint3D {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface DxfPolygonRegion {
+  id: string;
+  index: number;
+  layer: string;
+  label: string;
+  color: string;
+  closed: boolean;
+  vertices: DxfPoint3D[];
+  surfaceTriangles?: [DxfPoint3D, DxfPoint3D, DxfPoint3D][];
+  areaM2: number;
+  perimeterM: number;
+  centroid: DxfPoint3D;
+  minZ: number;
+  maxZ: number;
+  meanZ: number;
+  stockpileId?: number | null;
+  visible?: boolean;
+}
+
+export interface FlightDxfOverlay {
+  surveyId: number;
+  quarryId?: number;
+  clientId?: number;
+  clientCode?: string;
+  clientName?: string;
+  clientFolder: string;
+  flightSubFolder: string;
+  flightCode: string;
+  fileName: string;
+  storedFileName: string;
+  fileSize: string;
+  relativePath: string;
+  bounds: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    minZ: number;
+    maxZ: number;
+  };
+  polygons: DxfPolygonRegion[];
+  surfaceCount: number;
+  uploadedAt: string;
+  updatedAt: string;
+}
+

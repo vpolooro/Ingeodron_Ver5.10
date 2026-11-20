@@ -9,6 +9,7 @@ import {
   X,
   CheckCircle,
   Layers,
+  FileCode2,
 } from 'lucide-react';
 import {
   MATERIALS_UPDATED_EVENT,
@@ -23,9 +24,23 @@ import {
 } from '../utils/materialDensities.ts';
 import { formatEsNumber } from '../utils/numberFormat.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { FlightDxfManager } from './FlightDxfManager.tsx';
+import type { Client, FlightDxfOverlay, Quarry, Stockpile, Survey, Zone } from '../types.ts';
 
 interface AdminParametersPanelProps {
   onNotify: (title: string, msg: string, variant?: 'info' | 'success' | 'error') => void;
+  clients?: Client[];
+  quarries?: Quarry[];
+  zones?: Zone[];
+  surveys?: Survey[];
+  stockpiles?: Stockpile[];
+  dxfOverlays?: FlightDxfOverlay[];
+  activeClient?: Client | null;
+  activeQuarry?: Quarry | null;
+  activeFlight?: Survey;
+  onDxfOverlaySaved?: (overlay: FlightDxfOverlay) => void;
+  onDxfOverlayDeleted?: (surveyId: number) => void;
+  initialSection?: 'materials' | 'dxf';
 }
 
 const MATERIAL_COLOR_SWATCHES = [
@@ -62,7 +77,26 @@ const EMPTY_FORM: MaterialFormState = {
   color: '#eab308',
 };
 
-export const AdminParametersPanel: React.FC<AdminParametersPanelProps> = ({ onNotify }) => {
+export const AdminParametersPanel: React.FC<AdminParametersPanelProps> = ({
+  onNotify,
+  clients = [],
+  quarries = [],
+  zones = [],
+  surveys = [],
+  stockpiles = [],
+  dxfOverlays = [],
+  activeClient = null,
+  activeQuarry = null,
+  activeFlight,
+  onDxfOverlaySaved,
+  onDxfOverlayDeleted,
+  initialSection = 'materials',
+}) => {
+  const [activeSubTab, setActiveSubTab] = useState<'materials' | 'dxf'>(initialSection);
+  useEffect(() => {
+    setActiveSubTab(initialSection);
+  }, [initialSection]);
+
   const [materials, setMaterials] = useState<MaterialDensityEntry[]>(() =>
     getMaterialDensityCatalog()
   );
@@ -279,6 +313,51 @@ export const AdminParametersPanel: React.FC<AdminParametersPanelProps> = ({ onNo
 
   return (
     <section className="space-y-5">
+      {/* Selector de subsección en Configuración */}
+      <div className="glass-panel p-2 rounded-2xl border border-gray-800 inline-flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('materials')}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 transition cursor-pointer ${
+            activeSubTab === 'materials'
+              ? 'bg-emerald-600 text-white shadow'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800/70'
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          <span>Materiales y Densidades ({materials.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('dxf')}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 transition cursor-pointer ${
+            activeSubTab === 'dxf'
+              ? 'bg-cyan-600 text-white shadow'
+              : 'text-gray-400 hover:text-white hover:bg-gray-800/70'
+          }`}
+        >
+          <FileCode2 className="w-4 h-4" />
+          <span>Perímetros DXF 3D por Vuelo ({dxfOverlays.length})</span>
+        </button>
+      </div>
+
+      {activeSubTab === 'dxf' ? (
+        <FlightDxfManager
+          clients={clients}
+          quarries={quarries}
+          zones={zones}
+          surveys={surveys}
+          stockpiles={stockpiles}
+          overlays={dxfOverlays}
+          activeClient={activeClient}
+          activeQuarry={activeQuarry}
+          activeFlight={activeFlight}
+          onOverlaySaved={(ov) => onDxfOverlaySaved?.(ov)}
+          onOverlayDeleted={(sid) => onDxfOverlayDeleted?.(sid)}
+          onNotify={onNotify}
+        />
+      ) : (
+        <>
       {/* Cabecera y KPIs */}
       <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-gray-800 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -749,6 +828,8 @@ export const AdminParametersPanel: React.FC<AdminParametersPanelProps> = ({ onNo
         onConfirm={confirmState.onConfirm}
         onCancel={() => setConfirmState((prev) => ({ ...prev, open: false }))}
       />
+        </>
+      )}
     </section>
   );
 };
