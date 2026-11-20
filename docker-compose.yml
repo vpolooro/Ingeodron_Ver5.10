@@ -1,5 +1,5 @@
 # ==============================================================================
-# DOCKER COMPOSE — PORTAL INGEODRON v5.0.0
+# DOCKER COMPOSE — PORTAL INGEODRON v5.20
 # Instalación y compilación directa desde GitHub usando Dockerfile
 # Repositorio: https://github.com/vpolooro/Ingeodron_Ver5.10.git
 # ==============================================================================
@@ -25,7 +25,7 @@ services:
     build:
       context: ${GIT_BUILD_CONTEXT:-https://github.com/vpolooro/Ingeodron_Ver5.10.git#main}
       dockerfile: Dockerfile
-    image: ingeodron-portal:5.0.0
+    image: ingeodron-portal:5.20
     container_name: ingeodron-portal
     restart: unless-stopped
     ports:

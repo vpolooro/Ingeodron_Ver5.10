@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 import { Client, Quarry, Zone, Survey, Stockpile } from '../types.ts';
 import { formatDateEu } from './dateUtils.ts';
+import { formatEsNumber } from './numberFormat.ts';
 
 interface ExcelCellStyle {
   font?: Record<string, unknown>;
@@ -173,15 +174,13 @@ export function exportQuarryToExcel(
     ['Nombre Cantera:', quarry?.name || 'Sin explotación asignada'],
     ['Código Explotación:', quarry?.code || 'N/D'],
     ['Localización:', quarry?.location || 'N/D'],
-    ['Coordenadas Referencia:', quarry?.coordinates || 'N/D'],
-    ['Superficie Estimada:', `${(quarry?.areaM2 || 0).toLocaleString('es-ES')} m²`],
     ['Sistema de Referencia (CRS):', 'ETRS89 UTM Huso 30N (EPSG:25830)'],
     ['', ''],
     ['BALANCE GENERAL DE VOLÚMENES Y ACOPIOS', ''],
-    ['Total Volumen Relleno (+ Acopio):', `${totalFill.toLocaleString('es-ES')} m³`],
-    ['Total Volumen Desmonte (- Extracción):', `${totalCut.toLocaleString('es-ES')} m³`],
-    ['Balance Neto General:', `${totalNet.toLocaleString('es-ES')} m³`],
-    ['Masa Total Estimada de Acopios:', `${totalTonnage.toLocaleString('es-ES')} toneladas`],
+    ['Total Volumen Relleno (+ Acopio):', `${formatEsNumber(totalFill)} m³`],
+    ['Total Volumen Desmonte (- Extracción):', `${formatEsNumber(totalCut)} m³`],
+    ['Balance Neto General:', `${formatEsNumber(totalNet)} m³`],
+    ['Masa Total Estimada de Acopios:', `${formatEsNumber(totalTonnage)} toneladas`],
     ['Número de Zonas de la Explotación:', zones.length],
     ['Número de Misiones / Vuelos Registrados:', surveys.length],
     ['Número de Acopios Individuales:', scopedStockpiles.length || surveys.length],
@@ -196,10 +195,10 @@ export function exportQuarryToExcel(
     { s: { r: 1, c: 0 }, e: { r: 1, c: 1 } },
     { s: { r: 4, c: 0 }, e: { r: 4, c: 1 } },
     { s: { r: 11, c: 0 }, e: { r: 11, c: 1 } },
-    { s: { r: 19, c: 0 }, e: { r: 19, c: 1 } },
+    { s: { r: 17, c: 0 }, e: { r: 17, c: 1 } },
   ];
 
-  const sectionRowSet = new Set([4, 11, 19]);
+  const sectionRowSet = new Set([4, 11, 17]);
   const resumenRowHeights: XLSX.RowInfo[] = [];
   for (let r = 0; r < resumenData.length; r++) {
     resumenRowHeights.push({ hpt: r === 0 ? 28 : sectionRowSet.has(r) ? 22 : 19 });
@@ -319,15 +318,15 @@ export function exportQuarryToExcel(
             'Zona Perteneciente': z.name,
             'Vuelo': latestSurvey ? latestSurvey.flightCode : 'Sin registrar',
             'Fecha Medición': latestSurvey ? formatDateEu(latestSurvey.surveyDate) : 'N/D',
-            'Material Clasificado': z.targetMaterial,
-            'Cota Base Datum (m)': z.baseElevationM,
-            'Densidad (t/m³)': z.densityTonM3,
+            'Material Clasificado': 'Árido clasificado',
+            'Cota Base Datum (m)': 115.0,
+            'Densidad (t/m³)': 1.68,
             'Relleno (+m³)': fillM3,
             'Desmonte (-m³)': cutM3,
             'Volumen Neto (m³)': netM3,
             'Masa Estimada (t)': tonEst,
             'Superficie (m²)': Math.round(Math.max(Math.abs(fillM3), Math.abs(cutM3)) / 6.2),
-            'Observaciones': z.zoneType === 'bench_extraction' ? 'Frente de Extracción' : 'Pila de Acopio',
+            'Observaciones': 'Zona',
           };
         });
 
@@ -401,18 +400,30 @@ export function exportQuarryToExcel(
     if (includeFlightStatus) {
       row['Estado Vuelo'] = s.status ? s.status.toUpperCase() : 'ARCHIVED';
     }
+    const flightMaterial = hasFlightSts
+      ? Array.from(new Set(flightSts.map((st) => st.material).filter(Boolean))).join(', ') || 'Árido clasificado'
+      : 'Árido clasificado';
+    const flightBaseElev = hasFlightSts ? (flightSts[0]?.baseElevationM ?? 115.0) : 115.0;
+    const flightDensity = hasFlightSts
+      ? (Math.abs(rowNet) > 0 && rowTon > 0
+          ? Math.round((rowTon / Math.abs(rowNet)) * 100) / 100
+          : flightSts[0]?.densityTonM3 || 1.68)
+      : Math.abs(rowNet) > 0 && rowTon > 0
+      ? Math.round((rowTon / Math.abs(rowNet)) * 100) / 100
+      : 1.68;
+
     Object.assign(row, {
       'Fecha Levantamiento': formatDateEu(s.surveyDate),
       'Zona': z?.name || 'Zona General',
       'Nº Acopios': hasFlightSts ? flightSts.length : 1,
       'Acopios': hasFlightSts ? flightSts.map((st) => st.name).join(', ') : z?.name || 'Acopio',
-      'Material': z?.targetMaterial || 'Árido',
-      'Cota Base (m)': z?.baseElevationM || 115.0,
+      'Material': flightMaterial,
+      'Cota Base (m)': flightBaseElev,
       'Relleno (+ m³)': rowFill,
       'Desmonte (- m³)': rowCut,
       'Volumen Neto (m³)': rowNet,
       'Masa Estimada (t)': rowTon,
-      'Densidad Usada (t/m³)': z?.densityTonM3 || 1.68,
+      'Densidad Usada (t/m³)': flightDensity,
       'GSD (cm/px)': s.groundResolutionCm || 1.8,
       'Dron / Sensor': s.droneModel || 'DJI Matrice 4E RTK',
       'Topógrafo / Operador': s.operator || 'INGEODRON',

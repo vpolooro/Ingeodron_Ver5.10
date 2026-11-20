@@ -1,5 +1,5 @@
 # ==============================================================================
-# DOCKER COMPOSE — DESPLIEGUE REMOTO DESDE GITHUB (Ingeodron_Ver5.10)
+# DOCKER COMPOSE — DESPLIEGUE REMOTO DESDE GITHUB (Portal INGEODRON v5.20)
 # ==============================================================================
 # Uso:
 #   docker compose -f docker-compose.git.yml up -d

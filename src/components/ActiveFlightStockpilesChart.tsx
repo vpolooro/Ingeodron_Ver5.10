@@ -3,6 +3,7 @@ import { BarChart3, Layers, Plane } from 'lucide-react';
 import { Stockpile, Survey, Zone } from '../types.ts';
 import { estimateStockpileAreaM2 } from '../utils/localDataStore.ts';
 import { formatDateEu } from '../utils/dateUtils.ts';
+import { formatEsInt, formatEsNumber } from '../utils/numberFormat.ts';
 
 interface ActiveFlightStockpilesChartProps {
   activeFlight: Survey | undefined;
@@ -52,9 +53,9 @@ function computeNiceMax(rawMax: number): number {
 function formatAxisTick(value: number): string {
   if (value >= 1000) {
     const k = value / 1000;
-    return Number.isInteger(k) ? `${k}k` : `${k.toFixed(1)}k`;
+    return Number.isInteger(k) ? `${formatEsInt(k)}k` : `${formatEsNumber(k, 1)}k`;
   }
-  return Math.round(value).toString();
+  return formatEsInt(value);
 }
 
 function truncateLabel(text: string, maxLen: number): string {
@@ -192,9 +193,9 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
 
   const formatMetricVal = (val: number) => {
     if (metric === 'tonnage') {
-      return `${val.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`;
+      return `${formatEsNumber(val, 1)} t`;
     }
-    return `${Math.round(val).toLocaleString('es-ES')} ${unitLabel}`;
+    return `${formatEsInt(val)} ${unitLabel}`;
   };
 
   // SVG coordinate space (expands cleanly when viewing multiple flights/zones)
@@ -347,23 +348,19 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
                   )}
                   <span className="text-blue-400">{hoveredItem.st.material}</span>
                   <span className="font-mono text-emerald-400 font-semibold">
-                    Relleno: {hoveredItem.fillM3.toLocaleString('es-ES')} m³
+                    Relleno: {formatEsNumber(hoveredItem.fillM3)} m³
                   </span>
                   <span className="font-mono text-rose-400 font-semibold">
-                    Desmonte: {hoveredItem.cutM3.toLocaleString('es-ES')} m³
+                    Desmonte: {formatEsNumber(hoveredItem.cutM3)} m³
                   </span>
                   <span className="font-mono text-amber-300">
-                    {(hoveredItem.st.densityTonM3 || 1.68).toFixed(2)} t/m³
+                    {formatEsNumber(hoveredItem.st.densityTonM3 || 1.68, 2)} t/m³
                   </span>
                   <span className="font-mono text-cyan-300 font-bold">
-                    {hoveredItem.tonnage.toLocaleString('es-ES', {
-                      minimumFractionDigits: 1,
-                      maximumFractionDigits: 1,
-                    })}{' '}
-                    t
+                    {formatEsNumber(hoveredItem.tonnage, 1)} t
                   </span>
                   <span className="font-mono text-purple-300">
-                    {hoveredItem.areaM2.toLocaleString('es-ES')} m²
+                    {formatEsNumber(hoveredItem.areaM2)} m²
                   </span>
                 </div>
               ) : (
@@ -404,9 +401,9 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
               <span className="font-mono text-gray-400">
                 {metric === 'volume' ? (
                   <>
-                    Rell: <strong className="text-emerald-300">{totalFillM3.toLocaleString('es-ES')} m³</strong>
+                    Rell: <strong className="text-emerald-300">{formatEsNumber(totalFillM3)} m³</strong>
                     {' · '}
-                    Desm: <strong className="text-rose-300">{totalCutM3.toLocaleString('es-ES')} m³</strong>
+                    Desm: <strong className="text-rose-300">{formatEsNumber(totalCutM3)} m³</strong>
                   </>
                 ) : (
                   <>
@@ -519,11 +516,11 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
 
                   const showUnit = chartItems.length <= 4;
                   const fillLabel = showUnit
-                    ? `${Math.round(item.fillM3).toLocaleString('es-ES')} m³`
-                    : Math.round(item.fillM3).toLocaleString('es-ES');
+                    ? `${formatEsInt(item.fillM3)} m³`
+                    : formatEsInt(item.fillM3);
                   const cutLabel = showUnit
-                    ? `${Math.round(item.cutM3).toLocaleString('es-ES')} m³`
-                    : Math.round(item.cutM3).toLocaleString('es-ES');
+                    ? `${formatEsInt(item.cutM3)} m³`
+                    : formatEsInt(item.cutM3);
 
                   return (
                     <g
@@ -824,10 +821,10 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
                     {metric === 'volume' ? (
                       <>
                         <div className="text-[11px] font-mono font-bold text-emerald-300">
-                          Rell: {item.fillM3.toLocaleString('es-ES')} m³
+                          Rell: {formatEsNumber(item.fillM3)} m³
                         </div>
                         <div className="text-[10px] font-mono font-semibold text-rose-300">
-                          Desm: {item.cutM3.toLocaleString('es-ES')} m³
+                          Desm: {formatEsNumber(item.cutM3)} m³
                         </div>
                       </>
                     ) : (
@@ -836,7 +833,7 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
                           {formatMetricVal(item.value)}
                         </div>
                         <div className="text-[10px] font-mono text-gray-400">
-                          {sharePct.toFixed(1)}%
+                          {formatEsNumber(sharePct, 1)}%
                         </div>
                       </>
                     )}

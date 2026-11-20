@@ -17,8 +17,10 @@ const STORAGE_DIR = FILES_ROOT_DIR;
 const TMP_UPLOAD_DIR = path.join(STORAGE_DIR, '.tmp');
 const DELIVERABLES_INDEX_PATH = path.join(STORAGE_DIR, 'deliverables-index.json');
 const LEGACY_DELIVERABLES_INDEX_PATH = path.join(STORAGE_DIR, 'vuelos', 'deliverables-index.json');
+const STOCKPILE_PHOTOS_INDEX_PATH = path.join(STORAGE_DIR, 'stockpile-photos.json');
 const USERS_FILE_PATH = path.join(FILES_ROOT_DIR, 'users.json');
 const CLIENTS_FILE_PATH = path.join(FILES_ROOT_DIR, 'clients.json');
+const MATERIALS_FILE_PATH = path.join(FILES_ROOT_DIR, 'materials.json');
 
 interface StoredUser {
   id: number;
@@ -78,6 +80,21 @@ interface ServerDeliverableRecord {
   hasPhysicalFile: boolean;
   isServerStored: boolean;
   createdAt: string;
+}
+
+interface ServerStockpilePhotoRecord {
+  stockpileId: number;
+  surveyId?: number;
+  clientId?: number;
+  clientCode?: string;
+  clientName?: string;
+  clientFolder: string;
+  flightSubFolder: string;
+  fileName: string;
+  storedFileName: string;
+  photoUrl: string;
+  relativePath: string;
+  updatedAt: string;
 }
 
 function ensureStorageDirectories(): void {
@@ -628,6 +645,48 @@ function writeDeliverablesIndex(items: ServerDeliverableRecord[]): void {
   fs.writeFileSync(DELIVERABLES_INDEX_PATH, JSON.stringify(items, null, 2), 'utf-8');
 }
 
+const ALLOWED_PHOTO_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+
+function getStockpilePhotoFilePath(item: ServerStockpilePhotoRecord): string {
+  const storedName = item.storedFileName || item.fileName || '';
+  if (item.flightSubFolder) {
+    const primaryPath = path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, 'imagenes_acopios', storedName);
+    if (fs.existsSync(primaryPath)) return primaryPath;
+    const legacyPath = path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, 'fotos_acopios', storedName);
+    if (fs.existsSync(legacyPath)) return legacyPath;
+    return primaryPath;
+  }
+  const primaryPath = path.join(STORAGE_DIR, item.clientFolder, 'imagenes_acopios', storedName);
+  if (fs.existsSync(primaryPath)) return primaryPath;
+  const legacyPath = path.join(STORAGE_DIR, item.clientFolder, 'fotos_acopios', storedName);
+  if (fs.existsSync(legacyPath)) return legacyPath;
+  return primaryPath;
+}
+
+function readStockpilePhotosIndex(): ServerStockpilePhotoRecord[] {
+  ensureStorageDirectories();
+  if (!fs.existsSync(STOCKPILE_PHOTOS_INDEX_PATH)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(STOCKPILE_PHOTOS_INDEX_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item: ServerStockpilePhotoRecord) => {
+      if (!item || !item.clientFolder || !(item.storedFileName || item.fileName)) return false;
+      const p = getStockpilePhotoFilePath(item);
+      return isPathInsideDir(p, STORAGE_DIR) && fs.existsSync(p);
+    });
+  } catch {
+    return [];
+  }
+}
+
+function writeStockpilePhotosIndex(items: ServerStockpilePhotoRecord[]): void {
+  ensureStorageDirectories();
+  fs.writeFileSync(STOCKPILE_PHOTOS_INDEX_PATH, JSON.stringify(items, null, 2), 'utf-8');
+}
+
 function moveFileSafe(srcPath: string, destPath: string): void {
   try {
     fs.renameSync(srcPath, destPath);
@@ -712,7 +771,7 @@ async function startServer(): Promise<void> {
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
       ok: true,
-      version: '5.0.0',
+      version: '5.20',
       filesRootDir: FILES_ROOT_DIR,
       storageDir: STORAGE_DIR,
       security: {
@@ -813,6 +872,37 @@ async function startServer(): Promise<void> {
       return;
     }
     res.status(400).json({ error: 'Formato de lista de clientes inválido.' });
+  });
+
+  // Materials & Densities catalog (shared between admin & clients)
+  app.get('/api/materials', requireAuth, (_req: Request, res: Response) => {
+    ensureStorageDirectories();
+    if (!fs.existsSync(MATERIALS_FILE_PATH)) {
+      res.json({ materials: null });
+      return;
+    }
+    try {
+      const raw = fs.readFileSync(MATERIALS_FILE_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      res.json({ materials: Array.isArray(parsed) ? parsed : null });
+    } catch {
+      res.json({ materials: null });
+    }
+  });
+
+  app.post('/api/materials/sync', requireAuth, requireAdmin, (req: Request, res: Response) => {
+    const bodyMaterials = req.body?.materials;
+    if (!Array.isArray(bodyMaterials)) {
+      res.status(400).json({ error: 'Formato de lista de materiales inválido.' });
+      return;
+    }
+    try {
+      ensureStorageDirectories();
+      fs.writeFileSync(MATERIALS_FILE_PATH, JSON.stringify(bodyMaterials, null, 2), 'utf-8');
+      res.json({ ok: true, count: bodyMaterials.length });
+    } catch {
+      res.status(500).json({ error: 'No se pudo guardar el catálogo de materiales en el servidor.' });
+    }
   });
 
   // --------------------------------------------------------------------------
@@ -1383,6 +1473,275 @@ async function startServer(): Promise<void> {
     }
 
     res.json({ deleted: true, id });
+  });
+
+  // --------------------------------------------------------------------------
+  // STOCKPILE PHOTOS ENDPOINTS (Admin upload/delete; Client view/download)
+  // --------------------------------------------------------------------------
+
+  app.get('/api/stockpiles/photos', requireAuth, (req: Request, res: Response) => {
+    const user = (req as unknown as { authUser: AuthTokenPayload }).authUser;
+    const all = readStockpilePhotosIndex();
+    const photos =
+      user.role === 'admin'
+        ? all
+        : all.filter(
+            (p) =>
+              p.clientFolder === user.clientFolder ||
+              (user.clientId !== undefined && p.clientId === user.clientId) ||
+              (user.clientCode && p.clientCode?.toLowerCase() === user.clientCode.toLowerCase())
+          );
+
+    res.json({ photos });
+  });
+
+  app.post(
+    '/api/stockpiles/:id/photo',
+    requireAuth,
+    requireAdmin,
+    (req: Request, res: Response, next: NextFunction) => {
+      upload.single('file')(req, res, (err: unknown) => {
+        if (!err) {
+          next();
+          return;
+        }
+        if (err instanceof multer.MulterError) {
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            res.status(413).json({
+              error: 'La fotografía supera el límite máximo permitido.',
+              code: 'FILE_TOO_LARGE',
+            });
+            return;
+          }
+          res.status(400).json({
+            error: `Error al recibir la fotografía (${err.code}): ${err.message}`,
+            code: err.code,
+          });
+          return;
+        }
+        const msg = err instanceof Error ? err.message : 'Error procesando la fotografía.';
+        res.status(500).json({ error: msg, code: 'UPLOAD_MIDDLEWARE_ERROR' });
+      });
+    },
+    (req: Request, res: Response) => {
+      const stockpileId = Number(req.params.id);
+      const uploadedFile = req.file;
+
+      if (!Number.isFinite(stockpileId) || stockpileId <= 0) {
+        if (uploadedFile && fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+        res.status(400).json({ error: 'ID de acopio inválido.' });
+        return;
+      }
+
+      if (!uploadedFile) {
+        res.status(400).json({ error: 'Debes seleccionar una fotografía para subir.' });
+        return;
+      }
+
+      try {
+        const body = (req.body || {}) as Record<string, string | undefined>;
+        const originalName = sanitizeFileName(uploadedFile.originalname || `acopio_${stockpileId}.jpg`);
+        const rawExt = path.extname(originalName);
+        const ext = rawExt.toLowerCase();
+
+        if (!ALLOWED_PHOTO_EXTENSIONS.has(ext)) {
+          if (fs.existsSync(uploadedFile.path)) fs.unlinkSync(uploadedFile.path);
+          res.status(400).json({
+            error: `Formato "${ext || 'desconocido'}" no admitido. Solo se permiten imágenes JPG, JPEG, PNG o WebP.`,
+            code: 'FORBIDDEN_FILE_TYPE',
+          });
+          return;
+        }
+
+        const clientIdRaw = body.clientId ? Number(body.clientId) : undefined;
+        const clientId = clientIdRaw && Number.isFinite(clientIdRaw) ? clientIdRaw : undefined;
+        const clientCode = sanitizeClientCode(body.clientCode);
+        const clientName = (body.clientName || 'Cliente General').trim();
+        const { clientFolder, clientDir } = ensureClientDirectoryOnDisk(
+          clientCode,
+          clientName,
+          body.clientFolder
+        );
+
+        const surveyIdRaw = body.surveyId ? Number(body.surveyId) : undefined;
+        const surveyId = surveyIdRaw && Number.isFinite(surveyIdRaw) ? surveyIdRaw : undefined;
+        const rawFlightCode = body.flightCode?.trim() || (surveyId ? `VUE-${surveyId}` : 'GENERAL');
+        const rawFlightNotes = body.flightNotes?.trim() || 'Vuelo';
+        const { flightSubFolder, flightDir } = ensureFlightSubDirectory(
+          clientDir,
+          rawFlightCode,
+          rawFlightNotes
+        );
+
+        const photosDir = path.join(flightDir, 'imagenes_acopios');
+        if (!isPathInsideDir(photosDir, clientDir)) {
+          throw new Error('Ruta de carpeta de fotografías no válida.');
+        }
+        if (!fs.existsSync(photosDir)) {
+          fs.mkdirSync(photosDir, { recursive: true });
+        }
+
+        const cleanCode = sanitizeFileName(body.stockpileCode || '')
+          .replace(/\.(png|jpe?g|webp)$/i, '')
+          .trim();
+        const cleanName = sanitizeFileName(body.stockpileName || '')
+          .replace(/\.(png|jpe?g|webp)$/i, '')
+          .trim();
+        const safeBaseName =
+          cleanCode && cleanName
+            ? `${cleanCode}_${cleanName}`
+            : cleanCode || cleanName || `acopio_${stockpileId}`;
+        const finalExt = rawExt || ext;
+
+        const current = readStockpilePhotosIndex();
+        let renamedFileName = sanitizeFileName(`${safeBaseName}${finalExt}`);
+        const hasCollisionWithOther = current.some(
+          (p) =>
+            p.stockpileId !== stockpileId &&
+            p.clientFolder === clientFolder &&
+            p.flightSubFolder === flightSubFolder &&
+            (p.storedFileName || p.fileName).toLowerCase() === renamedFileName.toLowerCase()
+        );
+        if (hasCollisionWithOther) {
+          renamedFileName = sanitizeFileName(`${safeBaseName}_${stockpileId}${finalExt}`);
+        }
+
+        const finalDestPath = path.join(photosDir, renamedFileName);
+        if (!isPathInsideDir(finalDestPath, photosDir)) {
+          throw new Error('Nombre de archivo de fotografía no válido.');
+        }
+
+        moveFileSafe(uploadedFile.path, finalDestPath);
+
+        const prevIdx = current.findIndex((p) => p.stockpileId === stockpileId);
+        if (prevIdx >= 0) {
+          const prevRecord = current[prevIdx];
+          const prevPath = getStockpilePhotoFilePath(prevRecord);
+          if (prevPath !== finalDestPath && isPathInsideDir(prevPath, STORAGE_DIR) && fs.existsSync(prevPath)) {
+            try {
+              fs.unlinkSync(prevPath);
+            } catch {
+              // ignore old photo cleanup failure
+            }
+          }
+          current.splice(prevIdx, 1);
+        }
+
+        const version = Date.now();
+        const photoUrl = `/api/stockpiles/${stockpileId}/photo?v=${version}`;
+        const relativePath = `storage/${clientFolder}/${flightSubFolder}/imagenes_acopios/${renamedFileName}`;
+
+        const record: ServerStockpilePhotoRecord = {
+          stockpileId,
+          surveyId,
+          clientId,
+          clientCode,
+          clientName,
+          clientFolder,
+          flightSubFolder,
+          fileName: renamedFileName,
+          storedFileName: renamedFileName,
+          photoUrl,
+          relativePath,
+          updatedAt: new Date().toISOString(),
+        };
+
+        current.unshift(record);
+        writeStockpilePhotosIndex(current);
+
+        res.status(200).json({
+          ok: true,
+          photoUrl,
+          fileName: renamedFileName,
+          record,
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Error guardando la fotografía del acopio.';
+        res.status(500).json({ error: msg });
+      } finally {
+        if (uploadedFile && fs.existsSync(uploadedFile.path)) {
+          try {
+            fs.unlinkSync(uploadedFile.path);
+          } catch {
+            // ignore temp cleanup failure
+          }
+        }
+      }
+    }
+  );
+
+  app.get('/api/stockpiles/:id/photo', requireAuth, (req: Request, res: Response) => {
+    const user = (req as unknown as { authUser: AuthTokenPayload }).authUser;
+    const stockpileId = Number(req.params.id);
+    if (!Number.isFinite(stockpileId) || stockpileId <= 0) {
+      res.status(400).json({ error: 'ID de acopio inválido.' });
+      return;
+    }
+
+    const items = readStockpilePhotosIndex();
+    const item = items.find((p) => p.stockpileId === stockpileId);
+    if (!item) {
+      res.status(404).json({ error: 'Este acopio no tiene fotografía registrada en el servidor.' });
+      return;
+    }
+
+    if (user.role !== 'admin') {
+      const sameFolder = Boolean(user.clientFolder && item.clientFolder === user.clientFolder);
+      const sameId = user.clientId !== undefined && item.clientId === user.clientId;
+      const sameCode = Boolean(user.clientCode && item.clientCode?.toLowerCase() === user.clientCode.toLowerCase());
+      if (!sameFolder && !sameId && !sameCode) {
+        res.status(403).json({
+          error: 'Acceso denegado: esta fotografía pertenece a otro cliente.',
+          code: 'FORBIDDEN',
+        });
+        return;
+      }
+    }
+
+    const filePath = getStockpilePhotoFilePath(item);
+    if (!isPathInsideDir(filePath, STORAGE_DIR) || !fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'La fotografía física no se encontró en el servidor.' });
+      return;
+    }
+
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+
+    if (req.query.download === '1') {
+      res.download(filePath, item.fileName);
+      return;
+    }
+
+    res.sendFile(filePath);
+  });
+
+  app.delete('/api/stockpiles/:id/photo', requireAuth, requireAdmin, (req: Request, res: Response) => {
+    const stockpileId = Number(req.params.id);
+    if (!Number.isFinite(stockpileId) || stockpileId <= 0) {
+      res.status(400).json({ error: 'ID de acopio inválido.' });
+      return;
+    }
+
+    const items = readStockpilePhotosIndex();
+    const target = items.find((p) => p.stockpileId === stockpileId);
+    if (!target) {
+      res.json({ deleted: false, stockpileId });
+      return;
+    }
+
+    const remaining = items.filter((p) => p.stockpileId !== stockpileId);
+    writeStockpilePhotosIndex(remaining);
+
+    const filePath = getStockpilePhotoFilePath(target);
+    if (isPathInsideDir(filePath, STORAGE_DIR) && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        // ignore unlink errors
+      }
+    }
+
+    res.json({ deleted: true, stockpileId });
   });
 
   // --------------------------------------------------------------------------

@@ -25,6 +25,7 @@ import {
   downloadStockpilesCsvTemplate,
 } from '../utils/csvImportUtils.ts';
 import { formatDateEu } from '../utils/dateUtils.ts';
+import { formatEsNumber } from '../utils/numberFormat.ts';
 import { SortState, sortRowsBy, toggleSortState } from '../utils/tableSortUtils.ts';
 import { SortableTh } from './SortableTh.tsx';
 
@@ -652,16 +653,16 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
                           <td className="p-2.5">
                             <div className="text-white font-medium">{row.name || '—'}</div>
                             <div className="text-[10px] text-gray-400">
-                              {row.material} · {row.densityTonM3.toFixed(2)} t/m³
+                              {row.material} · {formatEsNumber(row.densityTonM3, 2)} t/m³
                             </div>
                           </td>
                           <td className="p-2.5 text-right font-mono whitespace-nowrap">
-                            <div className="text-emerald-400">+{row.fillVolumeM3.toLocaleString('es-ES')} m³</div>
-                            <div className="text-red-400">-{row.cutVolumeM3.toLocaleString('es-ES')} m³</div>
+                            <div className="text-emerald-400">+{formatEsNumber(row.fillVolumeM3)} m³</div>
+                            <div className="text-red-400">-{formatEsNumber(row.cutVolumeM3)} m³</div>
                           </td>
                           <td className="p-2.5 text-right font-mono whitespace-nowrap">
-                            <div className="text-blue-400 font-bold">{row.netVolumeM3.toLocaleString('es-ES')} m³</div>
-                            <div className="text-cyan-300">{row.tonnageEst.toLocaleString('es-ES')} t</div>
+                            <div className="text-blue-400 font-bold">{formatEsNumber(row.netVolumeM3)} m³</div>
+                            <div className="text-cyan-300">{formatEsNumber(row.tonnageEst)} t</div>
                           </td>
                           <td className="p-2.5">
                             {row.error ? (

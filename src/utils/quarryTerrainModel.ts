@@ -95,17 +95,8 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 
 function parseUtmOrigin(quarry: Quarry | null): { e0: number; n0: number } {
   const baseId = quarry?.id || 1;
-  let lat = 37.185;
-  let lon = -5.782;
-  if (quarry?.coordinates) {
-    const parts = quarry.coordinates.split(',').map((s) => parseFloat(s.trim()));
-    if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
-      lat = parts[0];
-      lon = parts[1];
-    }
-  }
-  const e0 = Math.round(254200 + (lon + 5.782) * 8500 + baseId * 340);
-  const n0 = Math.round(4118600 + (lat - 37.185) * 111000 + baseId * 210);
+  const e0 = Math.round(254200 + baseId * 340);
+  const n0 = Math.round(4118600 + baseId * 210);
   return { e0, n0 };
 }
 
@@ -213,12 +204,12 @@ export function buildQuarryTerrainData(
           id: z.id || idx + 1,
           name: z.name,
           code: z.code,
-          material: z.targetMaterial,
-          densityTonM3: z.densityTonM3,
+          material: 'Grava caliza 12/20',
+          densityTonM3: 1.68,
           fillVolumeM3: 18500 + idx * 4200,
           cutVolumeM3: 120,
           netVolumeM3: 18380 + idx * 4200,
-          tonnageEst: Math.round((18380 + idx * 4200) * (z.densityTonM3 || 1.68)),
+          tonnageEst: Math.round((18380 + idx * 4200) * 1.68),
         }))
       : [
           {

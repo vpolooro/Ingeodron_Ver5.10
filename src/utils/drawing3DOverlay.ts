@@ -1,4 +1,12 @@
+import { useEffect, useState } from 'react';
 import * as THREE from 'three';
+import { formatEsInt, formatEsNumber } from './numberFormat.ts';
+import {
+  MATERIAL_DENSITY_CATALOG,
+  MATERIALS_UPDATED_EVENT,
+  formatMaterialDisplayName,
+  getMaterialDensityCatalog,
+} from './materialDensities.ts';
 
 export type DrawToolMode = 'orbit' | 'line' | 'polygon' | 'zone' | 'pin' | 'annotation';
 
@@ -50,21 +58,57 @@ export interface DrawnPin3D {
 }
 
 export interface StockpileMaterialPreset {
+  id?: string;
   name: string;
+  category: string;
   densityTonM3: number;
+  minDensity: number;
+  maxDensity: number;
+  note: string;
   color: string;
 }
 
-export const STOCKPILE_MATERIAL_PRESETS: readonly StockpileMaterialPreset[] = [
-  { name: 'Arena lavada 0/4 mm', densityTonM3: 1.55, color: '#f59e0b' },
-  { name: 'Grava 4/12 mm', densityTonM3: 1.62, color: '#06b6d4' },
-  { name: 'Grava 12/20 mm', densityTonM3: 1.65, color: '#10b981' },
-  { name: 'Zahorra artificial ZA-20', densityTonM3: 1.85, color: '#3b82f6' },
-  { name: 'Balasto ferroviario', densityTonM3: 1.72, color: '#8b5cf6' },
-  { name: 'Caliza triturada 0/32', densityTonM3: 1.78, color: '#eab308' },
-  { name: 'Escollera / Todo-uno', densityTonM3: 1.95, color: '#f43f5e' },
-  { name: 'Tierra vegetal / Estéril', densityTonM3: 1.35, color: '#84cc16' },
-] as const;
+export const STOCKPILE_MATERIAL_PRESETS: readonly StockpileMaterialPreset[] = MATERIAL_DENSITY_CATALOG.map(
+  (entry) => ({
+    id: entry.id,
+    name: formatMaterialDisplayName(entry),
+    category: entry.category,
+    densityTonM3: entry.defaultDensity,
+    minDensity: entry.minDensity,
+    maxDensity: entry.maxDensity,
+    note: entry.note,
+    color: entry.color,
+  })
+);
+
+export function getStockpileMaterialPresets(): StockpileMaterialPreset[] {
+  return getMaterialDensityCatalog().map((entry) => ({
+    id: entry.id,
+    name: formatMaterialDisplayName(entry),
+    category: entry.category,
+    densityTonM3: entry.defaultDensity,
+    minDensity: entry.minDensity,
+    maxDensity: entry.maxDensity,
+    note: entry.note,
+    color: entry.color,
+  }));
+}
+
+export function useStockpileMaterialPresets(): StockpileMaterialPreset[] {
+  const [presets, setPresets] = useState<StockpileMaterialPreset[]>(() => getStockpileMaterialPresets());
+
+  useEffect(() => {
+    const sync = () => setPresets(getStockpileMaterialPresets());
+    window.addEventListener(MATERIALS_UPDATED_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(MATERIALS_UPDATED_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  return presets;
+}
 
 export const POLYGON_COLOR_PRESETS = [
   { name: 'Esmeralda', hex: '#10b981' },
@@ -919,16 +963,16 @@ function createVolumeLabelGroup(
 
   // Row 2: Assigned material + density
   const matLabel = shape.material?.trim()
-    ? `${truncateText(shape.material, 24)} · ${density.toFixed(2)} t/m³`
-    : `Sin material · ${density.toFixed(2)} t/m³`;
+    ? `${truncateText(shape.material, 24)} · ${formatEsNumber(density, 2)} t/m³`
+    : `Sin material · ${formatEsNumber(density, 2)} t/m³`;
   c2d.fillStyle = '#e2e8f0';
   c2d.font = '600 34px "Inter", system-ui, -apple-system, sans-serif';
   c2d.fillText(matLabel, textX, cardY + 142, maxTextW);
 
   // Row 3: Calculated volume + tonnage (or area fallback)
   const metricText = shape.volumeSupported
-    ? `+${Math.round(shape.cutVolumeM3).toLocaleString('es-ES')} m³  ·  ${Math.round(tons).toLocaleString('es-ES')} t`
-    : `${Math.round(shape.area2DM2).toLocaleString('es-ES')} m² · Perím. ${shape.length3DM.toFixed(1)} m`;
+    ? `+${formatEsInt(shape.cutVolumeM3)} m³  ·  ${formatEsInt(tons)} t`
+    : `${formatEsInt(shape.area2DM2)} m² · Perím. ${formatEsNumber(shape.length3DM, 1)} m`;
   c2d.fillStyle = '#34d399';
   c2d.font = '700 40px "JetBrains Mono", ui-monospace, monospace';
   c2d.fillText(metricText, textX, cardY + 218, maxTextW);
@@ -1094,9 +1138,9 @@ function createZonePolygonLabelGroup(
   // Bottom metrics line (Area & Perimeter)
   const areaLabel =
     shape.area2DM2 >= 10000
-      ? `${(shape.area2DM2 / 10000).toFixed(2)} ha`
-      : `${Math.round(shape.area2DM2).toLocaleString('es-ES')} m²`;
-  const metricText = `Área ${areaLabel}  ·  Perím. ${shape.length3DM.toFixed(1)} m`;
+      ? `${formatEsNumber(shape.area2DM2 / 10000, 2)} ha`
+      : `${formatEsInt(shape.area2DM2)} m²`;
+  const metricText = `Área ${areaLabel}  ·  Perím. ${formatEsNumber(shape.length3DM, 1)} m`;
   c2d.fillStyle = '#67e8f9';
   c2d.font = '700 34px "JetBrains Mono", ui-monospace, monospace';
   c2d.fillText(metricText, textX, cardY + cardH - 46, maxTextW);
@@ -1209,7 +1253,7 @@ function createLineLabelGroup(
   c2d.fillText(truncateText(shape.label || 'Recta', 24), textX, cardY + 62, maxTextW);
 
   const sign = shape.deltaZM >= 0 ? '+' : '';
-  const metricText = `${shape.length3DM.toFixed(1)} m · ΔZ ${sign}${shape.deltaZM.toFixed(1)} m · ${shape.slopePct.toFixed(0)}%`;
+  const metricText = `${formatEsNumber(shape.length3DM, 1)} m · ΔZ ${sign}${formatEsNumber(shape.deltaZM, 1)} m · ${formatEsInt(shape.slopePct)}%`;
   c2d.fillStyle = '#67e8f9';
   c2d.font = '700 36px "JetBrains Mono", ui-monospace, monospace';
   c2d.fillText(metricText, textX, cardY + 136, maxTextW);
@@ -1681,7 +1725,7 @@ export function buildDrawnShapesGroup(
       if (hasElev && elevM !== null) {
         c2.font = '700 42px "JetBrains Mono", ui-monospace, monospace';
         c2.fillStyle = '#67e8f9';
-        c2.fillText(`Z: ${elevM.toFixed(2)} m`, textX, cardY + 140, maxTextW);
+        c2.fillText(`Z: ${formatEsNumber(elevM, 2)} m`, textX, cardY + 140, maxTextW);
       }
 
       const tex = new THREE.CanvasTexture(canvas);
@@ -1846,23 +1890,23 @@ export function exportDrawingsCsv(
       s.label,
       s.note || '',
       isStockpile ? s.material || '' : '',
-      isStockpile ? shapeDensity.toFixed(2) : '',
+      isStockpile ? formatEsNumber(shapeDensity, 2) : '',
       s.color,
-      s.area2DM2.toFixed(2),
-      s.length3DM.toFixed(2),
-      s.length2DM.toFixed(2),
-      s.deltaZM.toFixed(2),
-      s.slopePct.toFixed(2),
-      s.slopeDeg.toFixed(2),
-      isStockpile && s.volumeSupported ? s.cutVolumeM3.toFixed(2) : '',
-      isStockpile && s.volumeSupported ? s.fillVolumeM3.toFixed(2) : '',
-      isStockpile && s.volumeSupported ? s.netVolumeM3.toFixed(2) : '',
-      isStockpile && s.volumeSupported ? tonnage.toFixed(2) : '',
-      isStockpile ? cotaBaseMinZ.toFixed(2) : '',
-      isStockpile ? cotaBaseMaxZ.toFixed(2) : '',
-      (centroidX * options.metersPerSceneUnit).toFixed(2),
-      (centroidZ * options.metersPerSceneUnit).toFixed(2),
-      cotaZ.toFixed(2),
+      formatEsNumber(s.area2DM2, 2),
+      formatEsNumber(s.length3DM, 2),
+      formatEsNumber(s.length2DM, 2),
+      formatEsNumber(s.deltaZM, 2),
+      formatEsNumber(s.slopePct, 2),
+      formatEsNumber(s.slopeDeg, 2),
+      isStockpile && s.volumeSupported ? formatEsNumber(s.cutVolumeM3, 2) : '',
+      isStockpile && s.volumeSupported ? formatEsNumber(s.fillVolumeM3, 2) : '',
+      isStockpile && s.volumeSupported ? formatEsNumber(s.netVolumeM3, 2) : '',
+      isStockpile && s.volumeSupported ? formatEsNumber(tonnage, 2) : '',
+      isStockpile ? formatEsNumber(cotaBaseMinZ, 2) : '',
+      isStockpile ? formatEsNumber(cotaBaseMaxZ, 2) : '',
+      formatEsNumber(centroidX * options.metersPerSceneUnit, 2),
+      formatEsNumber(centroidZ * options.metersPerSceneUnit, 2),
+      formatEsNumber(cotaZ, 2),
     ]);
   }
 
@@ -1888,9 +1932,9 @@ export function exportDrawingsCsv(
       '',
       '',
       '',
-      (p.point.x * options.metersPerSceneUnit).toFixed(2),
-      (p.point.z * options.metersPerSceneUnit).toFixed(2),
-      cotaZ.toFixed(2),
+      formatEsNumber(p.point.x * options.metersPerSceneUnit, 2),
+      formatEsNumber(p.point.z * options.metersPerSceneUnit, 2),
+      formatEsNumber(cotaZ, 2),
     ]);
   }
 

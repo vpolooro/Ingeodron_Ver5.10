@@ -43,10 +43,10 @@ import {
 } from '../utils/quarryTerrainModel.ts';
 import {
   POLYGON_COLOR_PRESETS,
-  STOCKPILE_MATERIAL_PRESETS,
   computePolygonVolumeMetrics,
   computeShapeMetrics,
   exportDrawingsCsv,
+  useStockpileMaterialPresets,
   type DrawToolMode,
   type DrawnPin3D,
   type DrawnPoint3D,
@@ -55,6 +55,7 @@ import {
 import { exportProfile2DDxf, exportProfile3DDxf } from '../utils/dxfProfileExporter.ts';
 import type { Quarry, Survey } from '../types.ts';
 import { formatDateEu } from '../utils/dateUtils.ts';
+import { formatEsInt, formatEsNumber } from '../utils/numberFormat.ts';
 
 type BaseLayer2D = 'ortofoto' | 'hipsometria';
 type ProfilePresetId = 'A' | 'B' | 'custom';
@@ -81,7 +82,7 @@ const ELEVATION_STOPS = [
 
 function formatElevM(v: number): string {
   if (!Number.isFinite(v)) return '0';
-  return Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1);
+  return Math.abs(v - Math.round(v)) < 0.05 ? formatEsInt(v) : formatEsNumber(v, 1);
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -162,7 +163,9 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
   });
 
   // Drawing, Volume, Polygon, Pin & Annotation Tools (matching Visor 3D)
-  const defaultMaterialPreset = STOCKPILE_MATERIAL_PRESETS[2];
+  const materialPresets = useStockpileMaterialPresets();
+  const defaultMaterialPreset = materialPresets[2] ??
+    materialPresets[0] ?? { name: 'Caliza', densityTonM3: 1.65, color: '#eab308' };
   const [drawTool, setDrawTool] = useState<DrawToolMode>('orbit');
   const [activeDrawPoints, setActiveDrawPoints] = useState<DrawnPoint3D[]>([]);
   const [previewPoint, setPreviewPoint] = useState<DrawnPoint3D | null>(null);
@@ -823,7 +826,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
       return {
         key: f,
         value,
-        label: spanZ < 15 ? value.toFixed(1) : String(Math.round(value)),
+        label: spanZ < 15 ? formatEsNumber(value, 1) : formatEsInt(value),
       };
     });
     const tickFractions =
@@ -966,7 +969,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                       fontSize={10 * invScale}
                       fontFamily="monospace"
                     >
-                      E {Math.round(utmH.easting)}
+                      E {formatEsInt(utmH.easting)}
                     </text>
 
                     <line
@@ -986,7 +989,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                       fontSize={10 * invScale}
                       fontFamily="monospace"
                     >
-                      N {Math.round(utmV.northing)}
+                      N {formatEsInt(utmV.northing)}
                     </text>
                   </g>
                 );
@@ -1065,7 +1068,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                       fontSize={8 * invScale}
                       fontFamily="monospace"
                     >
-                      {Math.round(sp.netVolumeM3).toLocaleString('es-ES')} m³
+                      {formatEsInt(sp.netVolumeM3)} m³
                     </text>
                   </g>
                 );
@@ -1084,12 +1087,12 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                 const estTons = shape.cutVolumeM3 * (shape.densityTonM3 ?? densityTonM3);
                 const subText =
                   shape.type === 'line'
-                    ? `${shape.length2DM.toFixed(1)} m · ΔZ ${shape.deltaZM >= 0 ? '+' : ''}${shape.deltaZM.toFixed(1)}m (${shape.slopePct.toFixed(0)}%)`
+                    ? `${formatEsNumber(shape.length2DM, 1)} m · ΔZ ${shape.deltaZM >= 0 ? '+' : ''}${formatEsNumber(shape.deltaZM, 1)}m (${formatEsInt(shape.slopePct)}%)`
                     : isStockpile && shape.volumeSupported
-                    ? `+${Math.round(shape.cutVolumeM3).toLocaleString('es-ES')} m³ · ${Math.round(estTons).toLocaleString('es-ES')} t`
+                    ? `+${formatEsInt(shape.cutVolumeM3)} m³ · ${formatEsInt(estTons)} t`
                     : shape.area2DM2 >= 10000
-                    ? `${(shape.area2DM2 / 10000).toFixed(2)} ha · ${shape.length2DM.toFixed(1)} m`
-                    : `${Math.round(shape.area2DM2).toLocaleString('es-ES')} m² · ${shape.length2DM.toFixed(1)} m`;
+                    ? `${formatEsNumber(shape.area2DM2 / 10000, 2)} ha · ${formatEsNumber(shape.length2DM, 1)} m`
+                    : `${formatEsInt(shape.area2DM2)} m² · ${formatEsNumber(shape.length2DM, 1)} m`;
 
                 return (
                   <g key={shape.id}>
@@ -1224,7 +1227,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                       fontSize={8 * invScale}
                       fontFamily="monospace"
                     >
-                      Z {cotaZ.toFixed(2)} m
+                      Z {formatEsNumber(cotaZ, 2)} m
                     </text>
                     {pin.note && (
                       <text
@@ -1403,7 +1406,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                           fontWeight="bold"
                           fontFamily="monospace"
                         >
-                          Z {hoveredSample.elevationM.toFixed(1)}m
+                          Z {formatEsNumber(hoveredSample.elevationM, 1)}m
                         </text>
                       </g>
                     );
@@ -1523,31 +1526,31 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                 <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                   <div className="text-[9px] text-gray-400 uppercase">Volumen</div>
                   <div className="font-mono font-bold text-emerald-400">
-                    {selectedStockpile.netVolumeM3.toLocaleString('es-ES')} m³
+                    {formatEsNumber(selectedStockpile.netVolumeM3)} m³
                   </div>
                 </div>
                 <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                   <div className="text-[9px] text-gray-400 uppercase">Tonelaje Est.</div>
                   <div className="font-mono font-bold text-amber-300">
-                    {selectedStockpile.tonnageEst.toLocaleString('es-ES')} t
+                    {formatEsNumber(selectedStockpile.tonnageEst)} t
                   </div>
                 </div>
                 <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                   <div className="text-[9px] text-gray-400 uppercase">Densidad</div>
                   <div className="font-mono text-gray-200">
-                    {selectedStockpile.densityTonM3.toFixed(2)} t/m³
+                    {formatEsNumber(selectedStockpile.densityTonM3, 2)} t/m³
                   </div>
                 </div>
                 <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                   <div className="text-[9px] text-gray-400 uppercase">Cota Cima</div>
                   <div className="font-mono text-cyan-300">
-                    {selectedStockpile.peakElevationM.toFixed(1)} m
+                    {formatEsNumber(selectedStockpile.peakElevationM, 1)} m
                   </div>
                 </div>
               </div>
               <div className="text-[10px] font-mono text-gray-400 flex items-center justify-between pt-0.5">
-                <span>E {selectedStockpile.easting.toFixed(1)}</span>
-                <span>N {selectedStockpile.northing.toFixed(1)}</span>
+                <span>E {formatEsNumber(selectedStockpile.easting, 1)}</span>
+                <span>N {formatEsNumber(selectedStockpile.northing, 1)}</span>
               </div>
             </div>
           )}
@@ -1623,7 +1626,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                             Total Acopios ({volumePolys.length})
                           </div>
                           <div className="font-mono text-[11px] font-bold text-emerald-300">
-                            +{Math.round(totalVolM3).toLocaleString('es-ES')} m³
+                            +{formatEsInt(totalVolM3)} m³
                           </div>
                         </div>
                         <div className="text-right">
@@ -1631,7 +1634,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                             Tonelaje Est.
                           </div>
                           <div className="font-mono text-[11px] font-bold text-amber-300">
-                            {Math.round(totalTons).toLocaleString('es-ES')} t
+                            {formatEsInt(totalTons)} t
                           </div>
                         </div>
                       </div>
@@ -1645,7 +1648,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                         const estTons = shape.cutVolumeM3 * shapeDensity;
                         const isEditing = selectedShapeId === shape.id && isStockpilePolygon;
                         const isEditingZone = editingZonePolygonId === shape.id && isZonePolygon;
-                        const matchedPreset = STOCKPILE_MATERIAL_PRESETS.find(
+                        const matchedPreset = materialPresets.find(
                           (m) => m.name === shape.material
                         );
                         const minPolyBaseY =
@@ -1709,9 +1712,9 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                                       <div className="font-mono text-[9.5px] text-cyan-300 truncate">
                                         Área{' '}
                                         {shape.area2DM2 >= 10000
-                                          ? `${(shape.area2DM2 / 10000).toFixed(2)} ha`
-                                          : `${Math.round(shape.area2DM2).toLocaleString('es-ES')} m²`}{' '}
-                                        · Perím. {shape.length2DM.toFixed(1)} m
+                                          ? `${formatEsNumber(shape.area2DM2 / 10000, 2)} ha`
+                                          : `${formatEsInt(shape.area2DM2)} m²`}{' '}
+                                        · Perím. {formatEsNumber(shape.length2DM, 1)} m
                                       </div>
                                     </div>
                                   ) : isStockpilePolygon ? (
@@ -1722,28 +1725,28 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                                             {shape.material || 'Material sin asignar'}
                                           </span>
                                           <span className="text-gray-400 font-mono">
-                                            {shapeDensity.toFixed(2)} t/m³
+                                            {formatEsNumber(shapeDensity, 2)} t/m³
                                           </span>
                                         </span>
                                       </div>
                                       {shape.volumeSupported && (
                                         <div className="font-mono text-[10px] font-semibold text-emerald-300 truncate">
-                                          Vol: +{Math.round(shape.cutVolumeM3).toLocaleString('es-ES')} m³ ·{' '}
-                                          {Math.round(estTons).toLocaleString('es-ES')} t
+                                          Vol: +{formatEsInt(shape.cutVolumeM3)} m³ ·{' '}
+                                          {formatEsInt(estTons)} t
                                         </div>
                                       )}
                                       <div className="font-mono text-[9px] text-gray-400 truncate">
                                         {shape.area2DM2 >= 10000
-                                          ? `${(shape.area2DM2 / 10000).toFixed(2)} ha`
-                                          : `${Math.round(shape.area2DM2).toLocaleString('es-ES')} m²`}{' '}
-                                        · Z base: {baseMinElevM.toFixed(1)}–{baseMaxElevM.toFixed(1)} m
+                                          ? `${formatEsNumber(shape.area2DM2 / 10000, 2)} ha`
+                                          : `${formatEsInt(shape.area2DM2)} m²`}{' '}
+                                        · Z base: {formatEsNumber(baseMinElevM, 1)}–{formatEsNumber(baseMaxElevM, 1)} m
                                       </div>
                                     </div>
                                   ) : (
                                     <div className="font-mono text-[9.5px] text-gray-400 truncate">
-                                      2D {shape.length2DM.toFixed(1)} m · ΔZ {shape.deltaZM >= 0 ? '+' : ''}
-                                      {shape.deltaZM.toFixed(1)} m ({shape.slopePct.toFixed(0)}% ·{' '}
-                                      {shape.slopeDeg.toFixed(1)}°)
+                                      2D {formatEsNumber(shape.length2DM, 1)} m · ΔZ {shape.deltaZM >= 0 ? '+' : ''}
+                                      {formatEsNumber(shape.deltaZM, 1)} m ({formatEsInt(shape.slopePct)}% ·{' '}
+                                      {formatEsNumber(shape.slopeDeg, 1)}°)
                                     </div>
                                   )}
                                 </div>
@@ -1855,8 +1858,13 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                                       value={matchedPreset ? matchedPreset.name : '__custom__'}
                                       onChange={(e) => {
                                         const val = e.target.value;
-                                        if (val === '__custom__') return;
-                                        const preset = STOCKPILE_MATERIAL_PRESETS.find(
+                                        if (val === '__custom__') {
+                                          if (matchedPreset || !shape.material?.trim()) {
+                                            updateShape(shape.id, { material: 'Material personalizado' });
+                                          }
+                                          return;
+                                        }
+                                        const preset = materialPresets.find(
                                           (m) => m.name === val
                                         );
                                         if (preset) {
@@ -1868,8 +1876,8 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                                       }}
                                       className="w-full bg-[#0b0f17] border border-gray-700 focus:border-emerald-500 rounded-md px-1.5 py-1 text-[10px] text-gray-100 outline-none cursor-pointer"
                                     >
-                                      {STOCKPILE_MATERIAL_PRESETS.map((m) => (
-                                        <option key={m.name} value={m.name}>
+                                      {materialPresets.map((m, idx) => (
+                                        <option key={m.id || `${m.name}-${idx}`} value={m.name}>
                                           {m.name}
                                         </option>
                                       ))}
@@ -1897,6 +1905,14 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                                     />
                                   </div>
                                 </div>
+
+                                <input
+                                  type="text"
+                                  value={shape.material || ''}
+                                  onChange={(e) => updateShape(shape.id, { material: e.target.value })}
+                                  placeholder="Nombre personalizado del material..."
+                                  className="w-full bg-[#0b0f17] border border-gray-800 focus:border-cyan-500 rounded-md px-2 py-1 text-[10px] text-cyan-200 outline-none"
+                                />
 
                                 <div className="space-y-1.5">
                                   <div className="flex items-center justify-between gap-2">
@@ -2019,7 +2035,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                                   </div>
                                 )}
                                 <div className="font-mono text-[9px] text-gray-400 truncate">
-                                  Z {cotaZ.toFixed(2)} m · E {utm.easting.toFixed(0)} · N {utm.northing.toFixed(0)}
+                                  Z {formatEsNumber(cotaZ, 2)} m · E {formatEsInt(utm.easting)} · N {formatEsInt(utm.northing)}
                                 </div>
                               </div>
                             </div>
@@ -2404,9 +2420,9 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
         {/* BOTTOM-LEFT LIVE UTM / Z COORDINATE READOUT */}
         {cursorCoords && (
           <div className="hidden md:flex absolute bottom-3 left-3 z-20 pointer-events-none bg-[#0b0f17]/90 border border-gray-800 rounded-lg px-2.5 py-1 text-[10px] font-mono text-gray-300 items-center gap-2 shadow">
-            <span>E: {cursorCoords.easting.toFixed(1)} m</span>
-            <span>N: {cursorCoords.northing.toFixed(1)} m</span>
-            <span className="text-cyan-300 font-semibold">Z: {cursorCoords.elevM.toFixed(2)} m</span>
+            <span>E: {formatEsNumber(cursorCoords.easting, 1)} m</span>
+            <span>N: {formatEsNumber(cursorCoords.northing, 1)} m</span>
+            <span className="text-cyan-300 font-semibold">Z: {formatEsNumber(cursorCoords.elevM, 2)} m</span>
           </div>
         )}
 
@@ -2601,9 +2617,9 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
               </div>
 
               <div className="text-[10px] font-mono text-cyan-300 bg-[#111827] border border-gray-800 rounded-lg px-2 py-1 flex items-center justify-between">
-                <span>Z: {pinCotaZ.toFixed(2)} m</span>
+                <span>Z: {formatEsNumber(pinCotaZ, 2)} m</span>
                 <span className="text-gray-400">
-                  E {utm.easting.toFixed(1)} · N {utm.northing.toFixed(1)}
+                  E {formatEsNumber(utm.easting, 1)} · N {formatEsNumber(utm.northing, 1)}
                 </span>
               </div>
 
@@ -2711,8 +2727,8 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
           if (!activeZone) return null;
           const areaText =
             activeZone.area2DM2 >= 10000
-              ? `${(activeZone.area2DM2 / 10000).toFixed(2)} ha`
-              : `${Math.round(activeZone.area2DM2).toLocaleString('es-ES')} m²`;
+              ? `${formatEsNumber(activeZone.area2DM2 / 10000, 2)} ha`
+              : `${formatEsInt(activeZone.area2DM2)} m²`;
 
           return (
             <div
@@ -2740,7 +2756,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
               <div className="text-[10px] font-mono text-cyan-300 bg-[#111827] border border-gray-800 rounded-lg px-2 py-1 flex items-center justify-between">
                 <span>Área: {areaText}</span>
                 <span className="text-gray-400">
-                  Perím.: {activeZone.length2DM.toFixed(1)} m · {activeZone.points.length} vért.
+                  Perím.: {formatEsNumber(activeZone.length2DM, 1)} m · {activeZone.points.length} vért.
                 </span>
               </div>
 
@@ -2895,8 +2911,8 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                 )}
               </div>
               <div className="text-[11px] font-mono text-gray-400">
-                Longitud: {Math.round(profileChartData.maxD)} m · Z mín {profileChartData.minElev.toFixed(1)} m · Z máx{' '}
-                {profileChartData.maxElev.toFixed(1)} m · ΔZ {profileChartData.deltaZ.toFixed(1)} m
+                Longitud: {formatEsInt(profileChartData.maxD)} m · Z mín {formatEsNumber(profileChartData.minElev, 1)} m · Z máx{' '}
+                {formatEsNumber(profileChartData.maxElev, 1)} m · ΔZ {formatEsNumber(profileChartData.deltaZ, 1)} m
               </div>
             </div>
           </button>
@@ -3067,7 +3083,7 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
                       fontSize="10"
                       fontFamily="monospace"
                     >
-                      {Math.round(tick.distM)} m
+                      {formatEsInt(tick.distM)} m
                     </text>
                   </g>
                 ))}
@@ -3136,28 +3152,28 @@ export const Quarry2DOrthophotoViewer: React.FC<Quarry2DOrthophotoViewerProps> =
               {hoveredSample ? (
                 <div className="flex flex-wrap items-center gap-3">
                   <span>
-                    Dist: <strong className="text-white">{hoveredSample.distanceM.toFixed(1)} m</strong>
+                    Dist: <strong className="text-white">{formatEsNumber(hoveredSample.distanceM, 1)} m</strong>
                   </span>
                   <span className="text-rose-300 font-bold">
-                    Cota Z: {hoveredSample.elevationM.toFixed(2)} m
+                    Cota Z: {formatEsNumber(hoveredSample.elevationM, 2)} m
                   </span>
                   <span className="text-gray-400">
-                    UTM E {hoveredSample.easting.toFixed(1)} · N {hoveredSample.northing.toFixed(1)}
+                    UTM E {formatEsNumber(hoveredSample.easting, 1)} · N {formatEsNumber(hoveredSample.northing, 1)}
                   </span>
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-3">
                   <span>
-                    Longitud: <strong className="text-white">{Math.round(profileChartData.maxD)} m</strong>
+                    Longitud: <strong className="text-white">{formatEsInt(profileChartData.maxD)} m</strong>
                   </span>
                   <span>
-                    Z mín: <strong className="text-white">{profileChartData.minElev.toFixed(1)} m</strong>
+                    Z mín: <strong className="text-white">{formatEsNumber(profileChartData.minElev, 1)} m</strong>
                   </span>
                   <span>
-                    Z máx: <strong className="text-white">{profileChartData.maxElev.toFixed(1)} m</strong>
+                    Z máx: <strong className="text-white">{formatEsNumber(profileChartData.maxElev, 1)} m</strong>
                   </span>
                   <span>
-                    Desnivel ΔZ: <strong className="text-rose-300">{profileChartData.deltaZ.toFixed(1)} m</strong>
+                    Desnivel ΔZ: <strong className="text-rose-300">{formatEsNumber(profileChartData.deltaZ, 1)} m</strong>
                   </span>
                 </div>
               )}

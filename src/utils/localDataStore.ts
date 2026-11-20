@@ -107,10 +107,7 @@ const INITIAL_QUARRIES: Quarry[] = [
     name: 'Cantera El Peñón - Macizo Calizo',
     code: 'CAN-CAL-01',
     location: 'Utrera - Sevilla, España',
-    coordinates: '37.1852, -5.7821',
-    materialType: 'Caliza dolomítica triturada',
     status: 'active',
-    areaM2: 78500,
     createdAt: '2026-01-15T08:30:00.000Z',
   },
   {
@@ -119,10 +116,7 @@ const INITIAL_QUARRIES: Quarry[] = [
     name: 'Explotación Las Cumbres',
     code: 'CAN-CUMB-02',
     location: 'Alcalá de Guadaíra - Sevilla',
-    coordinates: '37.3320, -5.8390',
-    materialType: 'Areniscas y margas',
     status: 'active',
-    areaM2: 42000,
     createdAt: '2026-02-01T09:00:00.000Z',
   },
   {
@@ -131,10 +125,7 @@ const INITIAL_QUARRIES: Quarry[] = [
     name: 'Gravera y Áridos Jarama Norte',
     code: 'CAN-GRAV-02',
     location: 'Arganda del Rey - Madrid',
-    coordinates: '40.2981, -3.4512',
-    materialType: 'Áridos rodados y arenas silíceas',
     status: 'active',
-    areaM2: 63000,
     createdAt: '2026-03-12T11:00:00.000Z',
   },
   {
@@ -143,10 +134,7 @@ const INITIAL_QUARRIES: Quarry[] = [
     name: 'Cantera Sierra del Levante',
     code: 'CAN-LEV-03',
     location: 'Novelda - Alicante',
-    coordinates: '38.3847, -0.7654',
-    materialType: 'Dolomía y caliza marmórea',
     status: 'active',
-    areaM2: 54000,
     createdAt: '2026-04-22T10:45:00.000Z',
   },
 ];
@@ -158,10 +146,6 @@ const INITIAL_ZONES: Zone[] = [
     quarryId: 1,
     name: 'Pila Acopio Árido Grueso 12/20mm',
     code: 'ZON-AC-01',
-    zoneType: 'stockpile',
-    targetMaterial: 'Grava caliza 12/20',
-    densityTonM3: 1.68,
-    baseElevationM: 115.0,
     status: 'active',
     createdAt: '2026-01-15T09:00:00.000Z',
   },
@@ -170,10 +154,6 @@ const INITIAL_ZONES: Zone[] = [
     quarryId: 1,
     name: 'Frente de Extracción Banco Norte 3',
     code: 'ZON-EXT-02',
-    zoneType: 'bench_extraction',
-    targetMaterial: 'Caliza viva en banco',
-    densityTonM3: 2.65,
-    baseElevationM: 95.0,
     status: 'active',
     createdAt: '2026-01-15T09:30:00.000Z',
   },
@@ -182,10 +162,6 @@ const INITIAL_ZONES: Zone[] = [
     quarryId: 1,
     name: 'Acopio Zahorra Artificial y Finos 0-6',
     code: 'ZON-AC-03',
-    zoneType: 'stockpile',
-    targetMaterial: 'Zahorra ZA 0/32',
-    densityTonM3: 1.72,
-    baseElevationM: 112.0,
     status: 'active',
     createdAt: '2026-01-15T10:00:00.000Z',
   },
@@ -194,10 +170,6 @@ const INITIAL_ZONES: Zone[] = [
     quarryId: 3,
     name: 'Pila de Acopio Gravilla Lavada 4/8',
     code: 'GRAV-PILA-01',
-    zoneType: 'stockpile',
-    targetMaterial: 'Gravilla silícea 4/8',
-    densityTonM3: 1.55,
-    baseElevationM: 580.0,
     status: 'active',
     createdAt: '2026-03-12T11:30:00.000Z',
   },
@@ -206,10 +178,6 @@ const INITIAL_ZONES: Zone[] = [
     quarryId: 3,
     name: 'Vaso de Extracción Gravera Fase II',
     code: 'GRAV-EXT-02',
-    zoneType: 'bench_extraction',
-    targetMaterial: 'Grava natural de río',
-    densityTonM3: 1.80,
-    baseElevationM: 565.0,
     status: 'active',
     createdAt: '2026-03-12T12:00:00.000Z',
   },
@@ -218,10 +186,6 @@ const INITIAL_ZONES: Zone[] = [
     quarryId: 2,
     name: 'Acopio Subbase Caliza Las Cumbres',
     code: 'CUMB-AC-01',
-    zoneType: 'stockpile',
-    targetMaterial: 'Subbase 0/40',
-    densityTonM3: 1.75,
-    baseElevationM: 140.0,
     status: 'active',
     createdAt: '2026-02-01T09:30:00.000Z',
   },
@@ -230,10 +194,6 @@ const INITIAL_ZONES: Zone[] = [
     quarryId: 4,
     name: 'Pila Acopio Dolomía Clasificada 0/20',
     code: 'LEV-AC-01',
-    zoneType: 'stockpile',
-    targetMaterial: 'Dolomía triturada 0/20',
-    densityTonM3: 1.74,
-    baseElevationM: 245.0,
     status: 'active',
     createdAt: '2026-04-22T11:00:00.000Z',
   },
@@ -256,7 +216,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 52214.4,
     pointCount: 310000,
     groundResolutionCm: 1.8,
-    meanElevationM: 123.5,
     notes: 'Levantamiento fotogramétrico mensual ordinario Junio',
   },
   {
@@ -273,7 +232,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 59875.2,
     pointCount: 335000,
     groundResolutionCm: 1.8,
-    meanElevationM: 124.8,
     notes: 'Control estival tras campaña de trituración Julio',
   },
   {
@@ -290,7 +248,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 66032.4,
     pointCount: 350000,
     groundResolutionCm: 1.7,
-    meanElevationM: 125.6,
     notes: 'Incremento acopio por mantenimiento planta Agosto',
   },
   {
@@ -307,7 +264,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 70375.2,
     pointCount: 360000,
     groundResolutionCm: 1.8,
-    meanElevationM: 126.2,
     notes: 'Campaña Septiembre - Pico de acopio',
   },
   {
@@ -324,7 +280,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 75852.0,
     pointCount: 375000,
     groundResolutionCm: 1.7,
-    meanElevationM: 127.1,
     notes: 'Control Octubre - Despacho continuo de árido',
   },
   {
@@ -341,7 +296,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 81614.4,
     pointCount: 388000,
     groundResolutionCm: 1.6,
-    meanElevationM: 128.0,
     notes: 'Misión Ordinaria Noviembre - Vuelo actual de referencia',
   },
 
@@ -360,7 +314,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 40280.0,
     pointCount: 290000,
     groundResolutionCm: 1.8,
-    meanElevationM: 92.4,
     notes: 'Inicio banqueo banco 3 frente norte',
   },
   {
@@ -377,7 +330,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 49687.5,
     pointCount: 310000,
     groundResolutionCm: 1.8,
-    meanElevationM: 91.8,
     notes: 'Extracción regular mes de Julio',
   },
   {
@@ -394,7 +346,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 59068.5,
     pointCount: 325000,
     groundResolutionCm: 1.7,
-    meanElevationM: 91.1,
     notes: 'Avance frente con voladura controlada',
   },
   {
@@ -411,7 +362,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 68688.0,
     pointCount: 340000,
     groundResolutionCm: 1.7,
-    meanElevationM: 90.5,
     notes: 'Profundización de banco escalonado',
   },
   {
@@ -428,7 +378,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 78387.0,
     pointCount: 355000,
     groundResolutionCm: 1.8,
-    meanElevationM: 89.9,
     notes: 'Control Octubre - Desmonte consolidado',
   },
 
@@ -447,7 +396,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 28242.4,
     pointCount: 220000,
     groundResolutionCm: 1.9,
-    meanElevationM: 118.2,
     notes: 'Acopio inicial zahorra clasificada',
   },
   {
@@ -464,7 +412,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 32318.8,
     pointCount: 235000,
     groundResolutionCm: 1.8,
-    meanElevationM: 118.7,
     notes: 'Incremento acopio zahorra',
   },
   {
@@ -481,7 +428,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 36481.2,
     pointCount: 245000,
     groundResolutionCm: 1.8,
-    meanElevationM: 119.3,
     notes: 'Medición bimensual zahorra',
   },
   {
@@ -498,7 +444,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 40024.4,
     pointCount: 255000,
     groundResolutionCm: 1.7,
-    meanElevationM: 119.8,
     notes: 'Control estacional de acopio',
   },
   {
@@ -515,7 +460,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 44083.6,
     pointCount: 270000,
     groundResolutionCm: 1.7,
-    meanElevationM: 120.4,
     notes: 'Campaña Octubre acopio zahorra',
   },
   {
@@ -532,7 +476,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 47730.0,
     pointCount: 285000,
     groundResolutionCm: 1.6,
-    meanElevationM: 120.9,
     notes: 'Vuelo Noviembre zahorra consolidada',
   },
 
@@ -551,7 +494,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 84672.0,
     pointCount: 395000,
     groundResolutionCm: 1.5,
-    meanElevationM: 128.8,
     notes: 'Misión Reciente - Pendiente de validación de puntos de apoyo GNSS',
   },
 
@@ -570,7 +512,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 34580.5,
     pointCount: 275000,
     groundResolutionCm: 1.7,
-    meanElevationM: 586.4,
     notes: 'Control mensual Octubre - Gravilla lavada 4/8mm',
   },
   {
@@ -587,7 +528,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 40338.8,
     pointCount: 298000,
     groundResolutionCm: 1.5,
-    meanElevationM: 587.9,
     notes: 'Vuelo Noviembre - Acopio consolidado para planta de hormigón',
   },
 
@@ -606,7 +546,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 34596.0,
     pointCount: 312000,
     groundResolutionCm: 1.6,
-    meanElevationM: 561.2,
     notes: 'Control de excavación en vaso Fase II',
   },
 
@@ -625,7 +564,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 34457.5,
     pointCount: 245000,
     groundResolutionCm: 1.7,
-    meanElevationM: 145.3,
     notes: 'Acopio subbase caliza 0/40mm',
   },
 
@@ -644,7 +582,6 @@ const INITIAL_SURVEYS: Survey[] = [
     tonnageEst: 57872.4,
     pointCount: 290000,
     groundResolutionCm: 1.6,
-    meanElevationM: 251.4,
     notes: 'Control volumétrico Noviembre - Dolomía clasificada Sierra del Levante',
   },
 ];
@@ -768,6 +705,24 @@ export function estimateStockpileAreaM2(fillVolumeM3: number, cutVolumeM3: numbe
   return Math.max(25, Math.round(primaryVol / 6.2));
 }
 
+const INITIAL_ZONE_SEED_STOCKPILE_DEFAULTS: Record<
+  number,
+  {
+    stockpileType: Stockpile['stockpileType'];
+    material: string;
+    densityTonM3: number;
+    baseElevationM: number;
+  }
+> = {
+  1: { stockpileType: 'stockpile', material: 'Grava caliza 12/20', densityTonM3: 1.68, baseElevationM: 115.0 },
+  2: { stockpileType: 'bench_extraction', material: 'Caliza viva en banco', densityTonM3: 2.65, baseElevationM: 95.0 },
+  3: { stockpileType: 'stockpile', material: 'Zahorra ZA 0/32', densityTonM3: 1.72, baseElevationM: 112.0 },
+  4: { stockpileType: 'stockpile', material: 'Gravilla silícea 4/8', densityTonM3: 1.55, baseElevationM: 580.0 },
+  5: { stockpileType: 'bench_extraction', material: 'Grava natural de río', densityTonM3: 1.80, baseElevationM: 565.0 },
+  6: { stockpileType: 'stockpile', material: 'Subbase 0/40', densityTonM3: 1.75, baseElevationM: 140.0 },
+  7: { stockpileType: 'stockpile', material: 'Dolomía triturada 0/20', densityTonM3: 1.74, baseElevationM: 245.0 },
+};
+
 // Build initial stockpiles (1 or several per flight; totals match parent Survey)
 function buildInitialStockpiles(): Stockpile[] {
   const list: Stockpile[] = [];
@@ -775,10 +730,11 @@ function buildInitialStockpiles(): Stockpile[] {
 
   for (const s of INITIAL_SURVEYS) {
     const z = INITIAL_ZONES.find((item) => item.id === s.zoneId);
-    const dens = z?.densityTonM3 || 1.68;
-    const mat = z?.targetMaterial || 'Árido clasificado';
-    const baseZ = z?.baseElevationM ?? 115.0;
-    const type = z?.zoneType || 'stockpile';
+    const seedDefaults = INITIAL_ZONE_SEED_STOCKPILE_DEFAULTS[s.zoneId];
+    const dens = seedDefaults?.densityTonM3 || 1.68;
+    const mat = seedDefaults?.material || 'Árido clasificado';
+    const baseZ = seedDefaults?.baseElevationM ?? 115.0;
+    const type = seedDefaults?.stockpileType || 'stockpile';
 
     if (s.id === 6) {
       // VUE-105-NOV: 2 acopios
@@ -1020,7 +976,14 @@ class LocalDataStore {
 
   // QUARRIES (Relationship: 1 Client -> N Quarries; 1 Quarry -> 1 unique Client)
   getQuarries(): Quarry[] {
-    return readStorage<Quarry[]>(STORAGE_KEY_QUARRIES, INITIAL_QUARRIES);
+    return readStorage<Quarry[]>(STORAGE_KEY_QUARRIES, INITIAL_QUARRIES).map((q) => {
+      const { coordinates: _c, materialType: _m, areaM2: _a, ...rest } = q as Quarry & {
+        coordinates?: unknown;
+        materialType?: unknown;
+        areaM2?: unknown;
+      };
+      return rest as Quarry;
+    });
   }
 
   getQuarriesByClient(clientId: number): Quarry[] {
@@ -1042,10 +1005,7 @@ class LocalDataStore {
       name: data.name || 'Nueva Explotación',
       code: data.code || `CAN-${newId}`,
       location: data.location || 'España',
-      coordinates: data.coordinates || '37.0, -5.0',
-      materialType: data.materialType || 'Árido clasificado',
       status: data.status || 'active',
-      areaM2: data.areaM2 || 50000,
       createdAt: new Date().toISOString(),
     };
     quarries.push(quarry);
@@ -1086,7 +1046,14 @@ class LocalDataStore {
 
   // ZONES (Relationship: 1 Quarry -> 1..N Zones; 1 Zone -> 1 unique Quarry)
   getZones(): Zone[] {
-    return readStorage<Zone[]>(STORAGE_KEY_ZONES, INITIAL_ZONES);
+    return readStorage<Zone[]>(STORAGE_KEY_ZONES, INITIAL_ZONES).map((z) => ({
+      id: z.id,
+      quarryId: z.quarryId,
+      name: z.name,
+      code: z.code,
+      status: z.status || 'active',
+      createdAt: z.createdAt,
+    }));
   }
 
   getZonesByQuarry(quarryId: number): Zone[] {
@@ -1107,10 +1074,6 @@ class LocalDataStore {
       quarryId: ownerQuarryId,
       name: data.name || 'Nueva Zona',
       code: data.code || `ZON-${newId}`,
-      zoneType: data.zoneType || 'stockpile',
-      targetMaterial: data.targetMaterial || 'Grava 20/40',
-      densityTonM3: data.densityTonM3 || 1.68,
-      baseElevationM: data.baseElevationM ?? 115.0,
       status: data.status || 'active',
       createdAt: new Date().toISOString(),
     };
@@ -1134,42 +1097,19 @@ class LocalDataStore {
       nextQuarryId = candidateQuarryId;
     }
 
-    const prevDensity = zones[idx].densityTonM3 || 1.68;
-    zones[idx] = { ...zones[idx], ...data, quarryId: nextQuarryId };
+    zones[idx] = {
+      ...zones[idx],
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.code !== undefined ? { code: data.code } : {}),
+      ...(data.status !== undefined ? { status: data.status } : {}),
+      quarryId: nextQuarryId,
+    };
     writeStorage(STORAGE_KEY_ZONES, zones);
-
-    const nextDensity = zones[idx].densityTonM3 || 1.68;
-    if (data.densityTonM3 !== undefined && Math.abs(nextDensity - prevDensity) > 0.0001) {
-      const zoneSurveyIds = new Set(
-        this.getSurveys()
-          .filter((s) => s.zoneId === id)
-          .map((s) => s.id)
-      );
-      if (zoneSurveyIds.size > 0) {
-        const stockpiles = this.getStockpiles();
-        let changed = false;
-        const updatedStockpiles = stockpiles.map((st) => {
-          if (!zoneSurveyIds.has(st.surveyId)) return st;
-          changed = true;
-          return {
-            ...st,
-            densityTonM3: nextDensity,
-            tonnageEst: Math.round(Math.abs(st.netVolumeM3) * nextDensity * 10) / 10,
-          };
-        });
-        if (changed) {
-          writeStorage(STORAGE_KEY_STOCKPILES, updatedStockpiles);
-          zoneSurveyIds.forEach((sId) => this.syncSurveyTotalsFromStockpiles(sId));
-        }
-      }
-    }
-
     return zones[idx];
   }
 
   /**
-   * Updates zone properties (including material density t/m3) and recalculates
-   * tonnage across its surveys and stockpiles.
+   * Updates zone properties and recalculates volume/tonnage totals if provided.
    */
   updateZoneAndRecalculate(
     zoneId: number,
@@ -1180,7 +1120,6 @@ class LocalDataStore {
     const updatedZone = this.updateZone(zoneId, data);
     if (!updatedZone) return null;
 
-    const density = updatedZone.densityTonM3 || 1.68;
     const surveys = this.getSurveys();
     const zoneSurveys = surveys.filter((s) => s.zoneId === zoneId);
 
@@ -1188,6 +1127,7 @@ class LocalDataStore {
       const fill = fillVolumeM3 ?? 0;
       const cut = cutVolumeM3 ?? 0;
       const net = fill - cut;
+      const density = 1.68;
       this.createSurvey({
         zoneId,
         surveyDate: new Date().toISOString().slice(0, 10),
@@ -1210,7 +1150,6 @@ class LocalDataStore {
         this.updateStockpile(targetStockpiles[0].id, {
           fillVolumeM3: fillVolumeM3 ?? targetStockpiles[0].fillVolumeM3,
           cutVolumeM3: cutVolumeM3 ?? targetStockpiles[0].cutVolumeM3,
-          densityTonM3: density,
         });
       } else {
         this.syncSurveyTotalsFromStockpiles(targetSurvey.id);
@@ -1243,17 +1182,44 @@ class LocalDataStore {
     const raw = readStorage<Survey[]>(STORAGE_KEY_SURVEYS, INITIAL_SURVEYS);
     let updated = false;
     const sanitized = raw.map((s) => {
-      if (!s.status) {
+      const legacy = s as Survey & {
+        meanElevationM?: unknown;
+        maxElevationM?: unknown;
+        minElevationM?: unknown;
+      };
+      if (
+        !legacy.status ||
+        legacy.meanElevationM !== undefined ||
+        legacy.maxElevationM !== undefined ||
+        legacy.minElevationM !== undefined
+      ) {
         updated = true;
-        const fallbackStatus: SurveyStatus =
-          s.id === 6 || s.id === 11 || s.id === 17
-            ? 'active'
-            : s.id === 18
-            ? 'pending'
-            : 'archived';
-        return { ...s, status: fallbackStatus };
       }
-      return s;
+      const fallbackStatus: SurveyStatus =
+        legacy.status ||
+        (legacy.id === 6 || legacy.id === 11 || legacy.id === 17
+          ? 'active'
+          : legacy.id === 18
+          ? 'pending'
+          : 'archived');
+      return {
+        id: legacy.id,
+        zoneId: legacy.zoneId,
+        status: fallbackStatus,
+        surveyDate: legacy.surveyDate,
+        flightCode: legacy.flightCode,
+        droneModel: legacy.droneModel,
+        operator: legacy.operator,
+        cutVolumeM3: legacy.cutVolumeM3,
+        fillVolumeM3: legacy.fillVolumeM3,
+        netVolumeM3: legacy.netVolumeM3,
+        tonnageEst: legacy.tonnageEst,
+        ...(legacy.pointCount !== undefined ? { pointCount: legacy.pointCount } : {}),
+        ...(legacy.groundResolutionCm !== undefined ? { groundResolutionCm: legacy.groundResolutionCm } : {}),
+        ...(legacy.notes !== undefined ? { notes: legacy.notes } : {}),
+        ...(legacy.rawPointDataJson !== undefined ? { rawPointDataJson: legacy.rawPointDataJson } : {}),
+        ...(legacy.createdAt !== undefined ? { createdAt: legacy.createdAt } : {}),
+      };
     });
     if (updated) {
       writeStorage(STORAGE_KEY_SURVEYS, sanitized);
@@ -1278,7 +1244,7 @@ class LocalDataStore {
 
     const surveys = this.getSurveys();
     const newId = surveys.length > 0 ? Math.max(...surveys.map((s) => s.id)) + 1 : 1;
-    const density = zone.densityTonM3 || 1.68;
+    const defaultDensity = 1.68;
     const fillVol = data.fillVolumeM3 ?? 25000;
     const cutVol = data.cutVolumeM3 ?? 0;
     const netVol = data.netVolumeM3 ?? fillVol - cutVol;
@@ -1296,10 +1262,9 @@ class LocalDataStore {
       cutVolumeM3: cutVol,
       fillVolumeM3: fillVol,
       netVolumeM3: netVol,
-      tonnageEst: data.tonnageEst ?? Math.round(Math.abs(netVol) * density * 10) / 10,
+      tonnageEst: data.tonnageEst ?? Math.round(Math.abs(netVol) * defaultDensity * 10) / 10,
       pointCount: data.pointCount || 320000,
       groundResolutionCm: data.groundResolutionCm || 1.8,
-      meanElevationM: data.meanElevationM || 120.0,
       notes: data.notes || 'Levantamiento fotogramétrico procesado en cliente',
       createdAt: new Date().toISOString(),
     };
@@ -1314,10 +1279,10 @@ class LocalDataStore {
             {
               name: `Acopio ${zone.name}`,
               code: `ACO-${survey.id}-01`,
-              stockpileType: zone.zoneType || 'stockpile',
-              material: zone.targetMaterial,
-              densityTonM3: density,
-              baseElevationM: zone.baseElevationM ?? 115.0,
+              stockpileType: 'stockpile' as Stockpile['stockpileType'],
+              material: 'Árido clasificado',
+              densityTonM3: defaultDensity,
+              baseElevationM: 115.0,
               fillVolumeM3: fillVol,
               cutVolumeM3: cutVol,
               notes: survey.notes,
@@ -1331,7 +1296,7 @@ class LocalDataStore {
         : 1;
 
     stockpilesToSeed.forEach((st, idx) => {
-      const stDens = Math.max(0.1, Number(st.densityTonM3 ?? density) || 1.68);
+      const stDens = Math.max(0.1, Number(st.densityTonM3 ?? defaultDensity) || 1.68);
       const stFill = Number(st.fillVolumeM3 ?? 0);
       const stCut = Number(st.cutVolumeM3 ?? 0);
       const stNet = stFill - stCut;
@@ -1340,10 +1305,10 @@ class LocalDataStore {
         surveyId: survey.id,
         name: st.name || `Acopio #${idx + 1} (${survey.flightCode})`,
         code: st.code || `ACO-${survey.id}-${String(idx + 1).padStart(2, '0')}`,
-        stockpileType: st.stockpileType || zone.zoneType || 'stockpile',
-        material: st.material || zone.targetMaterial,
+        stockpileType: st.stockpileType || 'stockpile',
+        material: st.material || 'Árido clasificado',
         densityTonM3: stDens,
-        baseElevationM: Number(st.baseElevationM ?? zone.baseElevationM ?? 115.0),
+        baseElevationM: Number(st.baseElevationM ?? 115.0),
         areaM2:
           st.areaM2 !== undefined
             ? Math.max(0, Math.round(Number(st.areaM2) || 0))
@@ -1377,8 +1342,8 @@ class LocalDataStore {
       nextZoneId = candidateZoneId;
     }
 
-    const zone = this.getZones().find((z) => z.id === nextZoneId);
-    const density = zone?.densityTonM3 || 1.68;
+    const childStockpilesForDens = this.getStockpilesBySurvey(id);
+    const density = childStockpilesForDens[0]?.densityTonM3 || 1.68;
 
     const nextFill = data.fillVolumeM3 !== undefined ? Number(data.fillVolumeM3) : current.fillVolumeM3;
     const nextCut = data.cutVolumeM3 !== undefined ? Number(data.cutVolumeM3) : current.cutVolumeM3;
@@ -1454,10 +1419,10 @@ class LocalDataStore {
           surveyId: s.id,
           name: z ? `Acopio ${z.name}` : `Acopio ${s.flightCode}`,
           code: `ACO-${s.id}-01`,
-          stockpileType: z?.zoneType || 'stockpile',
-          material: z?.targetMaterial || 'Árido clasificado',
-          densityTonM3: z?.densityTonM3 || 1.68,
-          baseElevationM: z?.baseElevationM ?? 115.0,
+          stockpileType: 'stockpile',
+          material: 'Árido clasificado',
+          densityTonM3: 1.68,
+          baseElevationM: 115.0,
           areaM2: estimateStockpileAreaM2(s.fillVolumeM3, s.cutVolumeM3),
           fillVolumeM3: s.fillVolumeM3,
           cutVolumeM3: s.cutVolumeM3,
@@ -1520,10 +1485,9 @@ class LocalDataStore {
       throw new Error('Cada acopio debe pertenecer obligatoriamente a un único vuelo válido.');
     }
 
-    const parentZone = this.getZones().find((z) => z.id === parentSurvey.zoneId);
     const stockpiles = this.getStockpiles();
     const newId = stockpiles.length > 0 ? Math.max(...stockpiles.map((st) => st.id)) + 1 : 1;
-    const density = Math.max(0.1, Number(data.densityTonM3 ?? parentZone?.densityTonM3 ?? 1.68));
+    const density = Math.max(0.1, Number(data.densityTonM3 ?? 1.68));
     const fillVol = Number(data.fillVolumeM3 ?? 15000);
     const cutVol = Number(data.cutVolumeM3 ?? 0);
     const netVol = fillVol - cutVol;
@@ -1534,10 +1498,10 @@ class LocalDataStore {
       surveyId: ownerSurveyId,
       name: data.name || `Acopio #${newId}`,
       code: data.code || `ACO-${ownerSurveyId}-${newId}`,
-      stockpileType: data.stockpileType || parentZone?.zoneType || 'stockpile',
-      material: data.material || parentZone?.targetMaterial || 'Grava 20/40',
+      stockpileType: data.stockpileType || 'stockpile',
+      material: data.material || 'Grava 20/40',
       densityTonM3: density,
-      baseElevationM: Number(data.baseElevationM ?? parentZone?.baseElevationM ?? 115.0),
+      baseElevationM: Number(data.baseElevationM ?? 115.0),
       areaM2:
         data.areaM2 !== undefined
           ? Math.max(0, Math.round(Number(data.areaM2) || 0))
@@ -1547,6 +1511,8 @@ class LocalDataStore {
       netVolumeM3: netVol,
       tonnageEst: tonnage,
       notes: data.notes,
+      photoUrl: data.photoUrl,
+      photoFileName: data.photoFileName,
       createdAt: new Date().toISOString(),
     };
 

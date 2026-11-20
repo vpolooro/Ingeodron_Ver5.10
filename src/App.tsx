@@ -30,8 +30,9 @@ import {
   Box,
   Sun,
   Moon,
+  Camera,
+  Eye,
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 import { IngeodronLogo } from './components/IngeodronLogo.tsx';
 import { LoginPage } from './components/LoginPage.tsx';
 import { ClientsUsersAdminPanel } from './components/ClientsUsersAdminPanel.tsx';
@@ -41,8 +42,11 @@ import { CsvImportModal } from './components/CsvImportModal.tsx';
 import { PhotogrammetryWorkspace } from './components/PhotogrammetryWorkspace.tsx';
 import { SortableTh } from './components/SortableTh.tsx';
 import { MultiFlightSelect } from './components/MultiFlightSelect.tsx';
+import { MaterialDensitySelector } from './components/MaterialDensitySelector.tsx';
+import { AdminParametersPanel } from './components/AdminParametersPanel.tsx';
+import { saveMaterialDensityCatalog } from './utils/materialDensities.ts';
 import { AppUser, Client, Quarry, Zone, Survey, Stockpile, Deliverable, SurveyStatus } from './types.ts';
-import { generateZonePdfReport } from './utils/pdfReportGenerator.ts';
+import { generateZonePdfReport, PdfReportType } from './utils/pdfReportGenerator.ts';
 import { localDataStore } from './utils/localDataStore.ts';
 import { buildClientFolderName, buildFlightSubFolderName } from './utils/folderUtils.ts';
 import { formatDateEu, parseDateTimestamp } from './utils/dateUtils.ts';
@@ -53,14 +57,16 @@ import {
   downloadFlightsCsvTemplate,
   downloadStockpilesCsvTemplate,
 } from './utils/csvImportUtils.ts';
-
-const MATERIAL_DENSITY_PRESETS = [
-  { label: 'Grava caliza', density: 1.68 },
-  { label: 'Arena silícea', density: 1.55 },
-  { label: 'Zahorra ZA', density: 1.72 },
-  { label: 'Caliza banco', density: 2.65 },
-  { label: 'Hormigón rec.', density: 1.85 },
-];
+import { formatEsInt, formatEsNumber } from './utils/numberFormat.ts';
+import {
+  uploadStockpilePhoto,
+  deleteStockpilePhotoServer,
+  downloadStockpilePhoto,
+  fetchServerStockpilePhotos,
+  getAuthenticatedPhotoSrc,
+  validateStockpilePhotoFile,
+  buildRenamedStockpilePhotoFileName,
+} from './utils/stockpilePhotoUtils.ts';
 
 function sortSurveysNewestFirst(list: Survey[]): Survey[] {
   return [...list].sort((a, b) => {
@@ -82,24 +88,24 @@ interface InlineDensityCellProps {
 
 function InlineDensityCell({ value, stockpileName, onCommit }: InlineDensityCellProps) {
   const safeVal = Number.isFinite(value) && value >= 0.1 ? value : 1.68;
-  const [draft, setDraft] = useState<string>(safeVal.toFixed(2));
+  const [draft, setDraft] = useState<string>(formatEsNumber(safeVal, 2));
   const [isFocused, setIsFocused] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isFocused) {
-      setDraft(safeVal.toFixed(2));
+      setDraft(formatEsNumber(safeVal, 2));
     }
   }, [safeVal, isFocused]);
 
   const commitValue = () => {
-    const normalized = draft.replace(',', '.').trim();
+    const normalized = draft.replace(/\s+/g, '').replace(',', '.').trim();
     const parsed = parseFloat(normalized);
     if (!Number.isFinite(parsed) || parsed < 0.1 || parsed > 10) {
-      setDraft(safeVal.toFixed(2));
+      setDraft(formatEsNumber(safeVal, 2));
       return;
     }
     const rounded = Math.round(parsed * 100) / 100;
-    setDraft(rounded.toFixed(2));
+    setDraft(formatEsNumber(rounded, 2));
     if (Math.abs(rounded - safeVal) >= 0.005) {
       onCommit(rounded);
     }
@@ -108,10 +114,8 @@ function InlineDensityCell({ value, stockpileName, onCommit }: InlineDensityCell
   return (
     <div className="inline-flex items-center justify-end gap-1">
       <input
-        type="number"
-        step="0.01"
-        min="0.1"
-        max="10"
+        type="text"
+        inputMode="decimal"
         aria-label={`Densidad de ${stockpileName} en t/m³`}
         title="Haz clic para modificar la densidad del material (Enter o salir para aplicar)"
         value={draft}
@@ -129,7 +133,7 @@ function InlineDensityCell({ value, stockpileName, onCommit }: InlineDensityCell
             e.preventDefault();
             e.currentTarget.blur();
           } else if (e.key === 'Escape') {
-            setDraft(safeVal.toFixed(2));
+            setDraft(formatEsNumber(safeVal, 2));
             e.currentTarget.blur();
           }
         }}
@@ -244,7 +248,9 @@ export default function App() {
   const [adminSelectedClientId, setAdminSelectedClientId] = useState<number | 'all'>('all');
 
   // Navigation Tabs matching INGEODRON
-  const [activeTab, setActiveTab] = useState<'tab-flights' | 'tab-dashboard' | 'tab-viewer3d' | 'tab-downloads' | 'tab-clients-admin'>('tab-flights');
+  const [activeTab, setActiveTab] = useState<
+    'tab-flights' | 'tab-dashboard' | 'tab-viewer3d' | 'tab-downloads' | 'tab-clients-admin' | 'tab-settings'
+  >('tab-flights');
 
   // Light / Dark Theme preference (persisted)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -280,6 +286,8 @@ export default function App() {
   const [selectedHeaderFlightIds, setSelectedHeaderFlightIds] = useState<number[]>([]);
   const [activeZoneFilter, setActiveZoneFilter] = useState<string>('all');
   const [flightStatusFilter, setFlightStatusFilter] = useState<'all' | SurveyStatus>('all');
+  const [pdfReportType, setPdfReportType] = useState<PdfReportType>('standard');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
 
   // Modals state
   const [showZoneModal, setShowZoneModal] = useState<boolean>(false);
@@ -312,10 +320,6 @@ export default function App() {
     quarryId: 0,
     name: '',
     code: '',
-    zoneType: 'stockpile' as Zone['zoneType'],
-    targetMaterial: 'Grava 20/40',
-    densityTonM3: 1.68,
-    baseElevationM: 115.0,
     status: 'active' as Zone['status'],
   });
 
@@ -325,7 +329,7 @@ export default function App() {
     surveyId: 1,
     zoneName: '',
     name: '',
-    stockpileType: 'stockpile' as Zone['zoneType'],
+    stockpileType: 'stockpile' as Stockpile['stockpileType'],
     baseElevationM: 115.0,
     areaM2: 2900,
     material: 'Grava 20/40',
@@ -333,7 +337,13 @@ export default function App() {
     relleno: 18000,
     desmonte: 0,
     notes: '',
+    photoUrl: '',
+    photoFileName: '',
   });
+  const [pendingStockpilePhotoFile, setPendingStockpilePhotoFile] = useState<File | null>(null);
+  const [pendingStockpilePhotoPreview, setPendingStockpilePhotoPreview] = useState<string>('');
+  const [uploadingStockpilePhotoId, setUploadingStockpilePhotoId] = useState<number | null>(null);
+  const [previewStockpilePhoto, setPreviewStockpilePhoto] = useState<Stockpile | null>(null);
 
   const [modalFlightData, setModalFlightData] = useState({
     id: 'new',
@@ -433,7 +443,8 @@ export default function App() {
   const handleGenerateZonePdf = async (
     surveyA?: Survey,
     surveyB?: Survey,
-    forceSingleActiveZone = false
+    forceSingleActiveZone = false,
+    reportTypeOverride?: PdfReportType
   ) => {
     if (!hasQuarryScope || tableFilteredSurveys.length === 0 || tableFilteredZones.length === 0) {
       showToast(
@@ -457,6 +468,7 @@ export default function App() {
       return;
     }
 
+    const selectedReportType: PdfReportType = reportTypeOverride ?? pdfReportType;
     const resolvedZoneIds = new Set(resolvedZones.map((z) => z.id));
     const surveysForReport = surveyA
       ? [surveyA]
@@ -469,6 +481,7 @@ export default function App() {
       new Set(surveysForReport.map((s) => s.surveyDate).filter(Boolean))
     );
 
+    setIsGeneratingPdf(true);
     try {
       const { fileName, blob } = await generateZonePdfReport({
         client: activeClient,
@@ -484,6 +497,7 @@ export default function App() {
         filterSummary: tableFilterSummary,
         surveyA,
         surveyB,
+        reportType: selectedReportType,
       });
 
       // Guardar automáticamente el informe en el servidor dentro de la subcarpeta del vuelo
@@ -510,7 +524,14 @@ export default function App() {
           formData.append('clientFolder', clientFolder);
           formData.append('flightCode', flightCode);
           formData.append('flightNotes', flightNotes);
-          formData.append('title', `Informe de Cubicación ${flightCode} - ${resolvedZones[0]?.name || 'Explotación'}`);
+          formData.append(
+            'title',
+            `${
+              selectedReportType === 'photographic'
+                ? 'Informe Fotográfico de Cubicación'
+                : 'Informe de Cubicación'
+            } ${flightCode} - ${resolvedZones[0]?.name || 'Explotación'}`
+          );
           formData.append('category', 'pdf_report');
           formData.append('fileName', fileName);
           formData.append('overwrite', 'true');
@@ -549,18 +570,20 @@ export default function App() {
         }
       }
 
+      const modePrefix = selectedReportType === 'photographic' ? 'Informe Fotográfico PDF' : 'Informe PDF';
       showToast(
-        savedOnServer ? 'Informe PDF Generado y Subido' : 'Informe Técnico Generado',
+        savedOnServer ? `${modePrefix} Generado y Subido` : `${modePrefix} Generado`,
         savedOnServer
           ? `Descargado y verificado en servidor: ${fileName}`
           : `Descargado en el navegador: ${fileName}`,
         savedOnServer ? 'success' : 'info',
         savedOnServer ? 5500 : 4000
       );
-      confetti({ particleCount: 35, spread: 60, origin: { y: 0.8 } });
     } catch (err: any) {
       console.error('Error generating PDF report:', err);
       showToast('Error PDF', 'No se pudo generar el reporte: ' + err.message, 'error');
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -608,15 +631,46 @@ export default function App() {
         // Fallback silently to local deliverables when backend is unavailable
       }
 
+      try {
+        const matResp = await fetch('/api/materials', {
+          headers: getAuthHeaders(),
+        });
+        if (matResp.ok) {
+          const matPayload = await matResp.json();
+          if (Array.isArray(matPayload?.materials)) {
+            saveMaterialDensityCatalog(matPayload.materials);
+          }
+        }
+      } catch {
+        // Fallback silently to local material catalog when offline
+      }
+
       const serverIds = new Set(serverDeliverables.map((d) => d.id));
       const dData = [...serverDeliverables, ...localDeliverables.filter((d) => !serverIds.has(d.id))];
+
+      const serverPhotos = await fetchServerStockpilePhotos();
+      const photoMap = new Map(serverPhotos.map((p) => [p.stockpileId, p]));
+      const mergedStockpiles = stData.map((st) => {
+        const srvPhoto = photoMap.get(st.id);
+        if (srvPhoto) {
+          return {
+            ...st,
+            photoUrl: srvPhoto.photoUrl,
+            photoFileName: srvPhoto.fileName,
+          };
+        }
+        if (st.photoUrl && st.photoUrl.startsWith('/api/')) {
+          return { ...st, photoUrl: undefined, photoFileName: undefined };
+        }
+        return st;
+      });
 
       setClients(cData);
       setUsers(uData);
       setQuarries(qData);
       setZones(zData);
       setSurveys(sData);
-      setStockpiles(stData);
+      setStockpiles(mergedStockpiles);
       setDeliverables(dData);
 
       let effectiveAdminClientFilter = adminSelectedClientId;
@@ -830,7 +884,6 @@ export default function App() {
       setActiveZone(targetZone);
     }
     showToast('Vuelo Seleccionado', `Cargado ${flight.flightCode} (${formatDateEu(flight.surveyDate)}) para cálculos volumétricos.`);
-    confetti({ particleCount: 25, spread: 50, origin: { y: 0.85 } });
     if (navigateToTab) {
       setActiveTab(navigateToTab);
     }
@@ -1200,9 +1253,12 @@ export default function App() {
     return Boolean(activeClient?.viewer3dEnabled);
   }, [authenticatedRole, currentUserRole, activeClient]);
 
-  // Prevent unauthorized access to Admin tab or disabled Visor 3D tab
+  // Prevent unauthorized access to Admin tabs or disabled Visor 3D tab
   useEffect(() => {
-    if (authenticatedRole !== 'admin' && activeTab === 'tab-clients-admin') {
+    if (
+      authenticatedRole !== 'admin' &&
+      (activeTab === 'tab-clients-admin' || activeTab === 'tab-settings')
+    ) {
       setActiveTab('tab-flights');
     } else if (!canAccessViewer3d && activeTab === 'tab-viewer3d') {
       setActiveTab('tab-flights');
@@ -1213,16 +1269,12 @@ export default function App() {
     if (activeQuarry) return activeQuarry;
     if (scopedQuarries.length === 0) return null;
     const uniqueLocations = Array.from(new Set(scopedQuarries.map((q) => q.location).filter(Boolean)));
-    const uniqueMaterials = Array.from(new Set(scopedQuarries.map((q) => q.materialType).filter(Boolean)));
     return {
       id: 0,
       clientId: activeClient?.id || scopedQuarries[0].clientId,
       name: `Todas las Explotaciones (${scopedQuarries.length})`,
       code: activeClient ? `ALL-${activeClient.cif.replace(/[^A-Z0-9]/gi, '').slice(0, 6)}` : 'INGEODRON-ALL',
       location: uniqueLocations.slice(0, 2).join(' / ') || 'Multi-ubicación',
-      coordinates: scopedQuarries[0].coordinates,
-      areaM2: scopedQuarries.reduce((acc, q) => acc + (q.areaM2 || 0), 0),
-      materialType: uniqueMaterials.join(', '),
       status: 'active',
     };
   }, [activeQuarry, scopedQuarries, activeClient]);
@@ -1397,6 +1449,8 @@ export default function App() {
           return r.zone?.name || '';
         case 'material':
           return r.st.material;
+        case 'density':
+          return r.st.densityTonM3 || 1.68;
         case 'fill':
           return r.st.fillVolumeM3;
         case 'cut':
@@ -1463,10 +1517,6 @@ export default function App() {
       quarryId: defaultQuarry.id,
       name: '',
       code: `ZON-${Math.floor(100 + Math.random() * 900)}`,
-      zoneType: 'stockpile',
-      targetMaterial: defaultQuarry.materialType || 'Grava 20/40',
-      densityTonM3: 1.68,
-      baseElevationM: 115.0,
       status: 'active',
     });
     setShowZoneModal(true);
@@ -1478,10 +1528,6 @@ export default function App() {
       quarryId: zone.quarryId,
       name: zone.name,
       code: zone.code,
-      zoneType: zone.zoneType || 'stockpile',
-      targetMaterial: zone.targetMaterial,
-      densityTonM3: zone.densityTonM3 || 1.68,
-      baseElevationM: zone.baseElevationM ?? 115.0,
       status: zone.status || 'active',
     });
     setShowZoneModal(true);
@@ -1494,30 +1540,16 @@ export default function App() {
       activeQuarry ||
       scopedQuarries[0];
     if (!targetQuarry) return;
-    const density = Math.max(0.1, Math.min(10, Number(modalZoneData.densityTonM3) || 1.68));
-    const baseElev = Number(modalZoneData.baseElevationM) || 0;
 
     try {
       if (currentUserRole !== 'admin') {
-        if (modalZoneData.id === 'new') {
-          showToast('Acceso Limitado', 'Solo el administrador puede crear nuevas zonas.');
-          return;
-        }
-        const zId = parseInt(modalZoneData.id, 10);
-        localDataStore.updateZone(zId, { densityTonM3: density });
-        showToast(
-          'Densidad de Zona Actualizada',
-          `Densidad ajustada a ${density.toFixed(2)} t/m³ en "${modalZoneData.name}". Tonelajes recalculados.`
-        );
+        showToast('Acceso Limitado', 'Solo el administrador puede crear o editar zonas.');
+        return;
       } else if (modalZoneData.id === 'new') {
         localDataStore.createZone({
           quarryId: targetQuarry.id,
           name: modalZoneData.name.trim(),
           code: modalZoneData.code.trim() || `ZON-${Math.floor(100 + Math.random() * 900)}`,
-          zoneType: modalZoneData.zoneType,
-          targetMaterial: modalZoneData.targetMaterial.trim(),
-          densityTonM3: density,
-          baseElevationM: baseElev,
           status: modalZoneData.status,
         });
         showToast('Zona Creada', `Zona "${modalZoneData.name.trim()}" registrada en ${targetQuarry.name}.`);
@@ -1526,10 +1558,6 @@ export default function App() {
         localDataStore.updateZone(zId, {
           name: modalZoneData.name.trim(),
           code: modalZoneData.code.trim(),
-          zoneType: modalZoneData.zoneType,
-          targetMaterial: modalZoneData.targetMaterial.trim(),
-          densityTonM3: density,
-          baseElevationM: baseElev,
           status: modalZoneData.status,
         });
         showToast('Zona Actualizada', `Zona "${modalZoneData.name.trim()}" guardada correctamente.`);
@@ -1579,32 +1607,115 @@ export default function App() {
   };
 
   // Stockpile (Acopio) Create & Edit (1 Survey -> 1..N Stockpiles)
+  const clearPendingStockpilePhoto = () => {
+    if (pendingStockpilePhotoPreview && pendingStockpilePhotoPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(pendingStockpilePhotoPreview);
+    }
+    setPendingStockpilePhotoFile(null);
+    setPendingStockpilePhotoPreview('');
+  };
+
+  const resolveStockpileUploadContext = (surveyId: number) => {
+    const survey = surveys.find((s) => s.id === surveyId);
+    const zone = survey ? zones.find((z) => z.id === survey.zoneId) : undefined;
+    const quarry = zone ? quarries.find((q) => q.id === zone.quarryId) : undefined;
+    const client = quarry ? clients.find((c) => c.id === quarry.clientId) : undefined;
+    return {
+      surveyId,
+      clientId: client?.id ?? quarry?.clientId,
+      clientCode: client?.code,
+      clientName: client?.name,
+      flightCode: survey?.flightCode,
+      flightNotes: survey?.notes,
+    };
+  };
+
+  const handleSelectModalStockpilePhoto = (file: File | null | undefined) => {
+    if (!file) return;
+    try {
+      validateStockpilePhotoFile(file);
+      if (pendingStockpilePhotoPreview && pendingStockpilePhotoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(pendingStockpilePhotoPreview);
+      }
+      const objectUrl = URL.createObjectURL(file);
+      setPendingStockpilePhotoFile(file);
+      setPendingStockpilePhotoPreview(objectUrl);
+      setModalStockpileData((prev) => ({
+        ...prev,
+        photoFileName: buildRenamedStockpilePhotoFileName(prev.zoneName, prev.name, file.name),
+      }));
+    } catch (err: any) {
+      showToast('Imagen no válida', err.message || 'Selecciona una imagen JPG, PNG o WebP válida.');
+    }
+  };
+
+  const handleQuickUploadStockpilePhoto = async (stockpile: Stockpile, file: File | null | undefined) => {
+    if (!file || currentUserRole !== 'admin') return;
+    try {
+      setUploadingStockpilePhotoId(stockpile.id);
+      const ctx = resolveStockpileUploadContext(stockpile.surveyId);
+      const uploaded = await uploadStockpilePhoto({
+        stockpileId: stockpile.id,
+        file,
+        stockpileName: stockpile.name,
+        stockpileCode: stockpile.code,
+        ...ctx,
+      });
+      localDataStore.updateStockpile(stockpile.id, {
+        photoUrl: uploaded.photoUrl,
+        photoFileName: uploaded.photoFileName,
+      });
+      await fetchData();
+      showToast(
+        'Fotografía Guardada',
+        `Foto "${uploaded.photoFileName}" asociada al acopio ${stockpile.name}.`
+      );
+    } catch (err: any) {
+      showToast('Error al Subir Foto', err.message || 'No se pudo subir la fotografía del acopio.');
+    } finally {
+      setUploadingStockpilePhotoId(null);
+    }
+  };
+
+  const handleDownloadStockpilePhoto = async (
+    stockpile: Pick<Stockpile, 'id' | 'code' | 'name' | 'photoUrl' | 'photoFileName'>
+  ) => {
+    try {
+      const fileName = await downloadStockpilePhoto(stockpile);
+      showToast('Foto Descargada', `Fotografía "${fileName}" descargada correctamente.`);
+    } catch (err: any) {
+      showToast('Error al Descargar Foto', err.message || 'No se pudo descargar la fotografía del acopio.');
+    }
+  };
+
   const handleOpenAddStockpile = (presetSurveyId?: number) => {
     const targetSurveyId = presetSurveyId || activeFlight?.id || currentSurveys[0]?.id;
     if (!targetSurveyId) {
       showToast('Vuelo Requerido', 'Primero debes registrar un vuelo en una zona para añadir acopios.');
       return;
     }
-    const parentSurvey = currentSurveys.find((s) => s.id === targetSurveyId);
-    const parentZone = parentSurvey ? currentQuarryZones.find((z) => z.id === parentSurvey.zoneId) : activeZone;
+    clearPendingStockpilePhoto();
     setModalStockpileData({
       id: 'new',
       surveyId: targetSurveyId,
       zoneName: '',
       name: `ACO-${targetSurveyId}-${Math.floor(10 + Math.random() * 90)}`,
-      stockpileType: parentZone?.zoneType || 'stockpile',
-      baseElevationM: parentZone?.baseElevationM ?? 115.0,
+      stockpileType: 'stockpile',
+      baseElevationM: 115.0,
       areaM2: 2980,
-      material: parentZone?.targetMaterial || 'Grava 20/40',
-      densidad: parentZone?.densityTonM3 || 1.68,
+      material: 'Grava 20/40',
+      densidad: 1.68,
       relleno: 18500,
       desmonte: 0,
       notes: '',
+      photoUrl: '',
+      photoFileName: '',
     });
     setShowStockpileModal(true);
   };
 
   const handleOpenEditStockpile = (stockpile: Stockpile) => {
+    clearPendingStockpilePhoto();
     const fallbackArea = Math.max(
       25,
       Math.round(Math.max(Math.abs(stockpile.fillVolumeM3 || 0), Math.abs(stockpile.cutVolumeM3 || 0)) / 6.2)
@@ -1622,6 +1733,8 @@ export default function App() {
       relleno: stockpile.fillVolumeM3,
       desmonte: stockpile.cutVolumeM3,
       notes: stockpile.notes || '',
+      photoUrl: stockpile.photoUrl || '',
+      photoFileName: stockpile.photoFileName || '',
     });
     setShowStockpileModal(true);
   };
@@ -1634,7 +1747,7 @@ export default function App() {
       if (updated) {
         showToast(
           'Densidad Actualizada',
-          `${stockpile.name}: ${clamped.toFixed(2)} t/m³ → ${updated.tonnageEst.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`
+          `${stockpile.name}: ${formatEsNumber(clamped, 2)} t/m³ → ${formatEsNumber(updated.tonnageEst, 1)} t`
         );
       }
     } catch (err: any) {
@@ -1660,19 +1773,24 @@ export default function App() {
           return;
         }
         const stId = parseInt(modalStockpileData.id, 10);
+        const nextMaterial = modalStockpileData.material.trim() || 'Material personalizado';
         const updated = localDataStore.updateStockpile(stId, {
+          material: nextMaterial,
           densityTonM3: density,
         });
         const finalTons = updated?.tonnageEst ?? calculatedTonnage;
         showToast(
-          'Densidad Actualizada',
-          `${modalStockpileData.zoneName}: ${density.toFixed(2)} t/m³ → ${finalTons.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t.`
+          'Material y Densidad Actualizados',
+          `${modalStockpileData.zoneName}: ${nextMaterial} (${formatEsNumber(density, 2)} t/m³) → ${formatEsNumber(finalTons, 1)} t.`
         );
       } else if (modalStockpileData.id === 'new') {
-        localDataStore.createStockpile({
-          surveyId: Number(modalStockpileData.surveyId),
+        const targetSurveyId = Number(modalStockpileData.surveyId);
+        const targetCode =
+          modalStockpileData.name.trim() || `ACO-${targetSurveyId}-${Math.floor(10 + Math.random() * 90)}`;
+        const created = localDataStore.createStockpile({
+          surveyId: targetSurveyId,
           name: modalStockpileData.zoneName.trim(),
-          code: modalStockpileData.name.trim() || `ACO-${modalStockpileData.surveyId}-${Math.floor(10 + Math.random() * 90)}`,
+          code: targetCode,
           stockpileType: modalStockpileData.stockpileType,
           material: modalStockpileData.material.trim(),
           densityTonM3: density,
@@ -1682,14 +1800,50 @@ export default function App() {
           cutVolumeM3: cutVol,
           notes: modalStockpileData.notes.trim(),
         });
+        if (pendingStockpilePhotoFile) {
+          const ctx = resolveStockpileUploadContext(targetSurveyId);
+          const uploaded = await uploadStockpilePhoto({
+            stockpileId: created.id,
+            file: pendingStockpilePhotoFile,
+            stockpileName: created.name,
+            stockpileCode: created.code,
+            ...ctx,
+          });
+          localDataStore.updateStockpile(created.id, {
+            photoUrl: uploaded.photoUrl,
+            photoFileName: uploaded.photoFileName,
+          });
+        }
         showToast(
           'Acopio Registrado',
-          `Acopio '${modalStockpileData.zoneName.trim()}' añadido al vuelo (${density.toFixed(2)} t/m³ → ${calculatedTonnage.toLocaleString('es-ES')} t).`
+          `Acopio '${modalStockpileData.zoneName.trim()}' añadido al vuelo (${formatEsNumber(density, 2)} t/m³ → ${formatEsNumber(calculatedTonnage)} t).`
         );
       } else {
         const stId = parseInt(modalStockpileData.id, 10);
+        const targetSurveyId = Number(modalStockpileData.surveyId);
+        const prevStockpile = stockpiles.find((s) => s.id === stId);
+        let nextPhotoUrl: string | undefined = modalStockpileData.photoUrl || undefined;
+        let nextPhotoFileName: string | undefined = modalStockpileData.photoFileName || undefined;
+
+        if (pendingStockpilePhotoFile) {
+          const ctx = resolveStockpileUploadContext(targetSurveyId);
+          const uploaded = await uploadStockpilePhoto({
+            stockpileId: stId,
+            file: pendingStockpilePhotoFile,
+            stockpileName: modalStockpileData.zoneName.trim(),
+            stockpileCode: modalStockpileData.name.trim(),
+            ...ctx,
+          });
+          nextPhotoUrl = uploaded.photoUrl;
+          nextPhotoFileName = uploaded.photoFileName;
+        } else if (!nextPhotoUrl && prevStockpile?.photoUrl) {
+          await deleteStockpilePhotoServer(stId);
+          nextPhotoUrl = undefined;
+          nextPhotoFileName = undefined;
+        }
+
         localDataStore.updateStockpile(stId, {
-          surveyId: Number(modalStockpileData.surveyId),
+          surveyId: targetSurveyId,
           name: modalStockpileData.zoneName.trim(),
           code: modalStockpileData.name.trim(),
           stockpileType: modalStockpileData.stockpileType,
@@ -1700,13 +1854,16 @@ export default function App() {
           fillVolumeM3: fillVol,
           cutVolumeM3: cutVol,
           notes: modalStockpileData.notes.trim(),
+          photoUrl: nextPhotoUrl,
+          photoFileName: nextPhotoFileName,
         });
         showToast(
           'Acopio Actualizado',
-          `${modalStockpileData.zoneName} actualizado (${density.toFixed(2)} t/m³ → ${calculatedTonnage.toLocaleString('es-ES')} t).`
+          `${modalStockpileData.zoneName} actualizado (${formatEsNumber(density, 2)} t/m³ → ${formatEsNumber(calculatedTonnage)} t).`
         );
       }
 
+      clearPendingStockpilePhoto();
       setShowStockpileModal(false);
       await fetchData();
     } catch (err: any) {
@@ -1725,6 +1882,7 @@ export default function App() {
         setConfirmDialog((prev) => ({ ...prev, open: false }));
         try {
           localDataStore.deleteStockpile(stockpile.id);
+          await deleteStockpilePhotoServer(stockpile.id);
           showToast('Acopio Eliminado', `El acopio "${stockpile.name}" ha sido borrado y el vuelo recalculado.`);
           await fetchData();
         } catch (err: any) {
@@ -1758,8 +1916,8 @@ export default function App() {
       {
         name: `Acopio ${defaultZone.name}`,
         code: `ACO-${Math.floor(100 + Math.random() * 900)}`,
-        material: defaultZone.targetMaterial || 'Grava caliza',
-        densityTonM3: defaultZone.densityTonM3 || 1.68,
+        material: 'Grava caliza',
+        densityTonM3: 1.68,
         fillVolumeM3: 0,
         cutVolumeM3: 0,
       },
@@ -1790,7 +1948,6 @@ export default function App() {
     const targetZoneId = Number(modalFlightData.zoneId) || activeZone?.id || currentQuarryZones[0]?.id;
     if (!targetZoneId) return;
 
-    const targetZone = currentQuarryZones.find((z) => z.id === targetZoneId);
     const gsd = Number(modalFlightData.gsd) || 1.8;
 
     try {
@@ -1800,10 +1957,10 @@ export default function App() {
             ? modalFlightStockpiles.map((st, idx) => ({
               name: st.name.trim() || `Acopio #${idx + 1}`,
               code: st.code.trim() || `ACO-${idx + 1}`,
-              stockpileType: targetZone?.zoneType || 'stockpile',
-              material: st.material.trim() || targetZone?.targetMaterial || 'Árido clasificado',
+              stockpileType: 'stockpile' as Stockpile['stockpileType'],
+              material: st.material.trim() || 'Árido clasificado',
               densityTonM3: Math.max(0.1, Number(st.densityTonM3) || 1.68),
-              baseElevationM: targetZone?.baseElevationM ?? 115.0,
+              baseElevationM: 115.0,
               fillVolumeM3: Number(st.fillVolumeM3) || 0,
               cutVolumeM3: Number(st.cutVolumeM3) || 0,
             }))
@@ -2060,8 +2217,8 @@ export default function App() {
 
     const sizeFormatted =
       file.size < 1024 * 1024
-        ? `${Math.max(1, Math.round(file.size / 1024))} KB`
-        : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+        ? `${formatEsInt(Math.max(1, Math.round(file.size / 1024)))} KB`
+        : `${formatEsNumber(file.size / (1024 * 1024), 1)} MB`;
 
     const baseTitle = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
 
@@ -2227,7 +2384,6 @@ export default function App() {
         'success',
         6500
       );
-      confetti({ particleCount: 30, spread: 55, origin: { y: 0.78 } });
     } catch (err: any) {
       const msg = err?.message || 'No se pudo subir el archivo.';
       setUploadStage('error');
@@ -2389,7 +2545,7 @@ export default function App() {
     <div className="bg-[#070a10] text-gray-200 antialiased min-h-screen flex flex-col selection:bg-blue-600 selection:text-white">
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed top-4 right-4 z-[70] pointer-events-none animate-fade-in max-w-sm">
+        <div className="fixed top-4 right-4 z-[70] pointer-events-none max-w-sm">
           <div
             className={`glass-panel p-3 px-4 rounded-xl border text-xs shadow-2xl flex items-start gap-3 pointer-events-auto ${
               toast.variant === 'success'
@@ -2670,7 +2826,9 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setCurrentUserRole('manager');
-                  if (activeTab === 'tab-clients-admin') setActiveTab('tab-flights');
+                  if (activeTab === 'tab-clients-admin' || activeTab === 'tab-settings') {
+                    setActiveTab('tab-flights');
+                  }
                   showToast('Perfil Cambiado', 'Vista previa Modo Cliente');
                 }}
                 className={`px-2 py-1 rounded text-[11px] font-semibold transition cursor-pointer ${currentUserRole === 'manager' ? 'bg-amber-600 text-white shadow-sm' : 'text-gray-400 hover:text-white'
@@ -2751,17 +2909,31 @@ export default function App() {
           </button>
 
           {authenticatedRole === 'admin' && currentUserRole === 'admin' && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('tab-clients-admin')}
-              className={`px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 transition shrink-0 ${activeTab === 'tab-clients-admin'
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                : 'bg-[#0b0f17]/70 text-gray-400 border border-gray-800 hover:text-white'
-                }`}
-            >
-              <Users className="w-3.5 h-3.5 shrink-0 text-amber-400" />
-              <span>{canAccessViewer3d ? '5.' : '4.'} Clientes</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveTab('tab-clients-admin')}
+                className={`px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 transition shrink-0 ${activeTab === 'tab-clients-admin'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'bg-[#0b0f17]/70 text-gray-400 border border-gray-800 hover:text-white'
+                  }`}
+              >
+                <Users className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                <span>{canAccessViewer3d ? '5.' : '4.'} Clientes</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('tab-settings')}
+                className={`px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap flex items-center gap-1.5 transition shrink-0 ${activeTab === 'tab-settings'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-[#0b0f17]/70 text-gray-400 border border-gray-800 hover:text-white'
+                  }`}
+              >
+                <Sliders className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                <span>{canAccessViewer3d ? '6.' : '5.'} Parámetros</span>
+              </button>
+            </>
           )}
         </nav>
 
@@ -2819,17 +2991,31 @@ export default function App() {
             </button>
 
             {authenticatedRole === 'admin' && currentUserRole === 'admin' && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('tab-clients-admin')}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition text-left cursor-pointer ${activeTab === 'tab-clients-admin'
-                  ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                  }`}
-              >
-                <Users className="w-5 h-5 shrink-0 text-amber-500 text-center" />
-                <span className="truncate">{canAccessViewer3d ? '5.' : '4.'} Clientes y Usuarios</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tab-clients-admin')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition text-left cursor-pointer ${activeTab === 'tab-clients-admin'
+                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    }`}
+                >
+                  <Users className="w-5 h-5 shrink-0 text-amber-500 text-center" />
+                  <span className="truncate">{canAccessViewer3d ? '5.' : '4.'} Clientes y Usuarios</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tab-settings')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition text-left cursor-pointer ${activeTab === 'tab-settings'
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    }`}
+                >
+                  <Sliders className="w-5 h-5 shrink-0 text-emerald-400 text-center" />
+                  <span className="truncate">{canAccessViewer3d ? '6.' : '5.'} Configuración Parámetros</span>
+                </button>
+              </>
             )}
           </nav>
 
@@ -2853,7 +3039,7 @@ export default function App() {
                 <span className="text-blue-500">INGEO</span>
                 <span className="text-amber-500">DRON</span>
               </span>
-              <span className="text-cyan-400 font-semibold">v5.10</span>
+              <span className="text-cyan-400 font-semibold">v5.20</span>
             </div>
           </div>
         </aside>
@@ -2866,7 +3052,7 @@ export default function App() {
         >
 
           {/* EMPTY STATE: Client has no assigned quarries */}
-          {!hasQuarryScope && activeTab !== 'tab-clients-admin' && (
+          {!hasQuarryScope && activeTab !== 'tab-clients-admin' && activeTab !== 'tab-settings' && (
             <section className="glass-panel p-8 rounded-2xl border border-gray-800 text-center space-y-4 max-w-xl mx-auto my-12">
               <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
                 <AlertCircle className="w-6 h-6" />
@@ -3127,18 +3313,18 @@ export default function App() {
                               {flightStockpiles.length} acopio{flightStockpiles.length === 1 ? '' : 's'}
                             </span>
                             <span className="text-[10px] text-blue-400 font-mono ml-auto">
-                              GSD {flight.groundResolutionCm || 1.8} cm/px
+                              GSD {formatEsNumber(flight.groundResolutionCm || 1.8, { minDecimals: 1, maxDecimals: 2 })} cm/px
                             </span>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2 bg-[#111827]/80 border border-gray-800 rounded-lg p-2.5 text-[11px] font-mono">
                             <div>
                               <span className="block text-[9px] text-gray-400 font-sans uppercase">Relleno</span>
-                              <span className="text-emerald-400 font-bold">+{flight.fillVolumeM3.toLocaleString('es-ES')} m³</span>
+                              <span className="text-emerald-400 font-bold">+{formatEsNumber(flight.fillVolumeM3)} m³</span>
                             </div>
                             <div>
                               <span className="block text-[9px] text-gray-400 font-sans uppercase">Desmonte</span>
-                              <span className="text-red-400 font-bold">-{flight.cutVolumeM3.toLocaleString('es-ES')} m³</span>
+                              <span className="text-red-400 font-bold">-{formatEsNumber(flight.cutVolumeM3)} m³</span>
                             </div>
                           </div>
 
@@ -3403,15 +3589,15 @@ export default function App() {
                               <td className="p-3 font-mono text-[11px]">
                                 <div>
                                   <span className="text-gray-400">Rell:</span>{' '}
-                                  <span className="text-emerald-400 font-bold">+{flight.fillVolumeM3.toLocaleString()} m³</span>
+                                  <span className="text-emerald-400 font-bold">+{formatEsNumber(flight.fillVolumeM3)} m³</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-400">Desm:</span>{' '}
-                                  <span className="text-red-400 font-bold">-{flight.cutVolumeM3.toLocaleString()} m³</span>
+                                  <span className="text-red-400 font-bold">-{formatEsNumber(flight.cutVolumeM3)} m³</span>
                                 </div>
                               </td>
                               <td className="p-3 text-blue-400 font-mono text-[11px]">
-                                <div>GSD: {flight.groundResolutionCm || 1.8} cm/px</div>
+                                <div>GSD: {formatEsNumber(flight.groundResolutionCm || 1.8, { minDecimals: 1, maxDecimals: 2 })} cm/px</div>
                                 <div className="text-emerald-400 text-[10px]">RTK Fijo (Centimétrico)</div>
                               </td>
                               <td className="p-3 text-right">
@@ -3533,7 +3719,7 @@ export default function App() {
                         <>
                           <span>Dron: <strong className="text-gray-200">{activeFlight?.droneModel || 'DJI Matrice 4E RTK'}</strong></span>
                           <span className="hidden sm:inline">•</span>
-                          <span>GSD: <strong className="text-emerald-400">{activeFlight?.groundResolutionCm || 1.8} cm/px</strong></span>
+                          <span>GSD: <strong className="text-emerald-400">{formatEsNumber(activeFlight?.groundResolutionCm || 1.8, { minDecimals: 1, maxDecimals: 2 })} cm/px</strong></span>
                           <span className="hidden sm:inline">•</span>
                           <span>Operador: <strong className="text-cyan-400">{activeFlight?.operator || 'INGEODRON'}</strong></span>
                         </>
@@ -3542,43 +3728,11 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 bg-[#0b0f17] p-1.5 rounded-lg border border-gray-800 w-full lg:w-auto">
-                  <span className="text-gray-400 text-xs font-medium ml-1 shrink-0">Vuelo:</span>
-                  <div className="bg-[#111827] border border-gray-700 hover:border-emerald-500 rounded-md px-2.5 py-1 flex items-center flex-1 min-w-0 sm:min-w-[200px]">
-                    <MultiFlightSelect
-                      flights={headerSortedSurveys}
-                      zones={currentQuarryZones}
-                      mode={isAllFlights ? 'all' : 'custom_flights'}
-                      customModeValue="custom_flights"
-                      selectedFlightIds={headerFlightSelectionIds}
-                      showStatusIndicator={isAdminView}
-                      variant="header"
-                      align="right"
-                      disabled={currentSurveys.length === 0}
-                      emptyLabel="Sin vuelos"
-                      title="Seleccionar un vuelo, varios o todos los vuelos"
-                      presets={[
-                        {
-                          value: 'all',
-                          label: `Todos los vuelos (${currentSurveys.length})`,
-                        },
-                      ]}
-                      onSelectPreset={(preset) => {
-                        if (preset === 'all') {
-                          handleActivateFlight('all');
-                        }
-                      }}
-                      onToggleFlight={handleToggleHeaderFlight}
-                      onSelectSingle={(flightId) => handleActivateFlight(flightId)}
-                      onClear={handleResetHeaderFlightToFirst}
-                      clearLabel="Limpiar"
-                      clearTitle="Limpiar selección y seleccionar el primer vuelo del listado"
-                    />
-                  </div>
+                <div className="flex items-center justify-end w-full lg:w-auto shrink-0">
                   <button
                     type="button"
                     onClick={() => setActiveTab('tab-flights')}
-                    className="px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-md text-xs font-semibold border border-gray-700 transition shrink-0 cursor-pointer"
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs font-semibold border border-gray-700 transition shrink-0 cursor-pointer"
                   >
                     Ver Lista
                   </button>
@@ -3593,10 +3747,10 @@ export default function App() {
                     <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[10px] font-bold">+R</span>
                   </div>
                   <h3 className="text-xl sm:text-2xl font-bold text-white mt-1.5 code-font">
-                    +{totals.totalFill.toLocaleString('es-ES')} <span className="text-xs font-normal text-gray-400">m³</span>
+                    +{formatEsNumber(totals.totalFill)} <span className="text-xs font-normal text-gray-400">m³</span>
                   </h3>
                   <span className="text-[11px] text-gray-400 mt-1 block">
-                    Desmonte: <strong className="text-red-400 font-semibold">-{totals.totalCut.toLocaleString('es-ES')} m³</strong>
+                    Desmonte: <strong className="text-red-400 font-semibold">-{formatEsNumber(totals.totalCut)} m³</strong>
                   </span>
                 </div>
 
@@ -3606,7 +3760,7 @@ export default function App() {
                     <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">Neto</span>
                   </div>
                   <h3 className="text-xl sm:text-2xl font-bold text-white mt-1.5 code-font">
-                    {(totals.totalFill - totals.totalCut).toLocaleString('es-ES')} <span className="text-xs font-normal text-gray-400">m³</span>
+                    {formatEsNumber(totals.totalFill - totals.totalCut)} <span className="text-xs font-normal text-gray-400">m³</span>
                   </h3>
                   <span className="text-[11px] text-emerald-400 mt-1 block font-medium">
                     {tableFilteredStockpiles.length} acopios en {currentQuarryZones.length} zonas
@@ -3619,17 +3773,17 @@ export default function App() {
                     <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 text-[10px] font-bold">Masa</span>
                   </div>
                   <h3 className="text-xl sm:text-2xl font-bold text-white mt-1.5 code-font">
-                    {totals.totalTonnage.toLocaleString('es-ES', { maximumFractionDigits: 1 })} <span className="text-xs font-normal text-gray-400">t</span>
+                    {formatEsNumber(totals.totalTonnage, { maxDecimals: 1 })} <span className="text-xs font-normal text-gray-400">t</span>
                   </h3>
                   <span className="text-[11px] text-cyan-400 mt-1 block">
-                    Densidad ponderada: {totals.totalFill > 0 ? (totals.totalTonnage / totals.totalFill).toFixed(2) : '1.68'} t/m³
+                    Densidad ponderada: {totals.totalFill > 0 ? formatEsNumber(totals.totalTonnage / totals.totalFill, 2) : '1,68'} t/m³
                   </span>
                 </div>
 
                 <div className="glass-panel p-4 rounded-xl border border-gray-800 relative overflow-hidden group hover:border-purple-500/40 transition">
                   <div className="flex items-center justify-between text-xs text-gray-400 font-medium uppercase tracking-wider">
                     <span>{isAdminView ? 'Vuelo Activo' : 'Vuelo Seleccionado'}</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   </div>
                   <h3 className="text-lg sm:text-xl font-bold text-white mt-1.5 truncate">
                     {isAllFlights
@@ -3720,14 +3874,53 @@ export default function App() {
                             </button>
                           </>
                         )}
+                        <div
+                          className="inline-flex items-center bg-[#0b0f17] border border-gray-700 rounded-lg p-0.5 text-[11px]"
+                          role="group"
+                          aria-label="Tipo de informe PDF"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setPdfReportType('standard')}
+                            className={`px-2 py-1 rounded-md font-semibold transition cursor-pointer flex items-center gap-1 ${
+                              pdfReportType === 'standard'
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-white'
+                            }`}
+                            title="Informe PDF estándar (formato actual sin fotografías)"
+                          >
+                            <FileText className="w-3 h-3" /> Estándar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPdfReportType('photographic')}
+                            className={`px-2 py-1 rounded-md font-semibold transition cursor-pointer flex items-center gap-1 ${
+                              pdfReportType === 'photographic'
+                                ? 'bg-amber-600 text-white shadow-sm'
+                                : 'text-gray-400 hover:text-white'
+                            }`}
+                            title="Informe PDF fotográfico (añade columna final con miniaturas de las fotos de los acopios)"
+                          >
+                            <Camera className="w-3 h-3" /> Fotográfico
+                          </button>
+                        </div>
                         <button
                           type="button"
-                          disabled={tableFilteredSurveys.length === 0 || tableFilteredZones.length === 0}
-                          onClick={() => handleGenerateZonePdf()}
+                          disabled={isGeneratingPdf || tableFilteredSurveys.length === 0 || tableFilteredZones.length === 0}
+                          onClick={() => handleGenerateZonePdf(undefined, undefined, false, pdfReportType)}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow flex items-center gap-1.5 transition cursor-pointer"
-                          title="Descargar Informe Técnico PDF con los datos visibles en la tabla según los filtros"
+                          title={
+                            pdfReportType === 'photographic'
+                              ? 'Descargar Informe Fotográfico PDF con miniaturas de los acopios'
+                              : 'Descargar Informe Técnico PDF estándar con los datos visibles en la tabla según los filtros'
+                          }
                         >
-                          <FileText className="w-3.5 h-3.5" /> Reporte PDF
+                          <FileText className="w-3.5 h-3.5" />{' '}
+                          {isGeneratingPdf
+                            ? 'Generando...'
+                            : pdfReportType === 'photographic'
+                              ? 'PDF Fotográfico'
+                              : 'Reporte PDF'}
                         </button>
                         <button
                           type="button"
@@ -3876,50 +4069,134 @@ export default function App() {
                                               )}
                                             </div>
                                           </div>
-                                          <span className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[10px] font-medium shrink-0">
-                                            {st.material}
-                                          </span>
+                                          {currentUserRole !== 'admin' ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenEditStockpile(st)}
+                                              className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[10px] font-medium shrink-0 inline-flex items-center gap-1 transition cursor-pointer"
+                                              title="Cambiar material o densidad del acopio"
+                                            >
+                                              <span>{st.material}</span>
+                                              <Sliders className="w-2.5 h-2.5 opacity-80" />
+                                            </button>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[10px] font-medium shrink-0">
+                                              {st.material}
+                                            </span>
+                                          )}
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-2 bg-[#111827]/80 border border-gray-800 rounded-lg p-2.5 font-mono text-[11px]">
                                           <div>
                                             <span className="block text-[9px] text-gray-400 font-sans uppercase">Relleno</span>
-                                            <span className="text-emerald-400 font-bold">+{st.fillVolumeM3.toLocaleString('es-ES')} m³</span>
+                                            <span className="text-emerald-400 font-bold">+{formatEsNumber(st.fillVolumeM3)} m³</span>
                                           </div>
                                           <div>
                                             <span className="block text-[9px] text-gray-400 font-sans uppercase">Desmonte</span>
-                                            <span className="text-red-400 font-bold">-{st.cutVolumeM3.toLocaleString('es-ES')} m³</span>
+                                            <span className="text-red-400 font-bold">-{formatEsNumber(st.cutVolumeM3)} m³</span>
                                           </div>
                                           <div>
                                             <span className="block text-[9px] text-gray-400 font-sans uppercase">Toneladas</span>
                                             <span className="text-cyan-300 font-bold">
-                                              {st.tonnageEst.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t
+                                              {formatEsNumber(st.tonnageEst, 1)} t
                                             </span>
                                           </div>
                                           <div>
                                             <span className="block text-[9px] text-gray-400 font-sans uppercase">Superficie</span>
-                                            <span className="text-purple-300 font-bold">{areaVal.toLocaleString('es-ES')} m²</span>
+                                            <span className="text-purple-300 font-bold">{formatEsNumber(areaVal)} m²</span>
+                                          </div>
+                                        </div>
+
+                                        {/* Foto del Acopio (Mobile) */}
+                                        <div className="flex flex-wrap items-center justify-between gap-2 bg-[#111827]/70 border border-gray-800 rounded-lg px-2.5 py-2">
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            {st.photoUrl ? (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setPreviewStockpilePhoto(st)}
+                                                  className="w-10 h-10 rounded-lg overflow-hidden border border-gray-700 hover:border-cyan-400 transition shrink-0 cursor-pointer"
+                                                  title="Ampliar fotografía del acopio"
+                                                >
+                                                  <img
+                                                    src={getAuthenticatedPhotoSrc(st.photoUrl)}
+                                                    alt={`Foto de ${st.name}`}
+                                                    className="w-full h-full object-cover"
+                                                  />
+                                                </button>
+                                                <div className="min-w-0">
+                                                  <div className="text-[10px] font-semibold text-white truncate">
+                                                    {st.photoFileName || `Foto ${st.code}`}
+                                                  </div>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setPreviewStockpilePhoto(st)}
+                                                    className="text-[10px] text-cyan-300 hover:text-cyan-200 inline-flex items-center gap-1 cursor-pointer"
+                                                  >
+                                                    <Eye className="w-3 h-3" /> Ver ampliada
+                                                  </button>
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                                                <Camera className="w-3.5 h-3.5" />
+                                                <span>Sin fotografía</span>
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            {st.photoUrl && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDownloadStockpilePhoto(st)}
+                                                className="px-2.5 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 rounded text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer"
+                                              >
+                                                <Download className="w-3 h-3" /> Bajar Foto
+                                              </button>
+                                            )}
+                                            {currentUserRole === 'admin' && (
+                                              <label
+                                                className={`px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer ${
+                                                  uploadingStockpilePhotoId === st.id ? 'opacity-60 pointer-events-none' : ''
+                                                }`}
+                                              >
+                                                <Upload className="w-3 h-3" />
+                                                <span>
+                                                  {uploadingStockpilePhotoId === st.id
+                                                    ? 'Subiendo...'
+                                                    : st.photoUrl
+                                                      ? 'Cambiar'
+                                                      : 'Subir Foto'}
+                                                </span>
+                                                <input
+                                                  type="file"
+                                                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                                  className="hidden"
+                                                  onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    e.target.value = '';
+                                                    handleQuickUploadStockpilePhoto(st, file);
+                                                  }}
+                                                />
+                                              </label>
+                                            )}
                                           </div>
                                         </div>
 
                                         <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
                                           <div className="flex items-center gap-1.5">
                                             <span className="text-[11px] text-amber-400 font-semibold">Densidad:</span>
-                                            <InlineDensityCell
-                                              value={st.densityTonM3 || 1.68}
-                                              stockpileName={st.name}
-                                              onCommit={(nextDensity) => handleQuickUpdateStockpileDensity(st, nextDensity)}
-                                            />
-                                            {currentUserRole !== 'admin' && (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleOpenEditStockpile(st)}
-                                                className="p-1.5 bg-gray-800 hover:bg-gray-700 text-amber-300 rounded border border-gray-700 transition cursor-pointer"
-                                                title="Preselecciones de densidad"
-                                                aria-label={`Preselecciones de densidad para ${st.name}`}
-                                              >
-                                                <Sliders className="w-3.5 h-3.5" />
-                                              </button>
+                                            {currentUserRole === 'admin' ? (
+                                              <InlineDensityCell
+                                                value={st.densityTonM3 || 1.68}
+                                                stockpileName={st.name}
+                                                onCommit={(nextDensity) => handleQuickUpdateStockpileDensity(st, nextDensity)}
+                                              />
+                                            ) : (
+                                              <span className="font-mono text-amber-300 font-semibold text-xs">
+                                                {formatEsNumber(st.densityTonM3 || 1.68, 2)} t/m³
+                                              </span>
                                             )}
                                           </div>
 
@@ -3953,12 +4230,12 @@ export default function App() {
                                       Totales Filtrados ({rows.length} acopios)
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-                                      <div className="text-emerald-400 font-bold">Rell: +{sumFill.toLocaleString('es-ES')} m³</div>
-                                      <div className="text-red-400 font-bold">Desm: -{sumCut.toLocaleString('es-ES')} m³</div>
+                                      <div className="text-emerald-400 font-bold">Rell: +{formatEsNumber(sumFill)} m³</div>
+                                      <div className="text-red-400 font-bold">Desm: -{formatEsNumber(sumCut)} m³</div>
                                       <div className="text-cyan-300 font-bold">
-                                        {sumTon.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t
+                                        {formatEsNumber(sumTon, 1)} t
                                       </div>
-                                      <div className="text-purple-300 font-bold">{sumArea.toLocaleString('es-ES')} m²</div>
+                                      <div className="text-purple-300 font-bold">{formatEsNumber(sumArea)} m²</div>
                                     </div>
                                   </div>
                                 </>
@@ -3999,11 +4276,19 @@ export default function App() {
                                       className="p-3"
                                     />
                                     <SortableTh
-                                      label="Material & Densidad"
+                                      label="Material"
                                       sortKey="material"
                                       sortState={stockpilesTableSort}
                                       onSort={(key) => setStockpilesTableSort((prev) => toggleSortState(prev, key))}
                                       className="p-3"
+                                    />
+                                    <SortableTh
+                                      label="Densidad"
+                                      sortKey="density"
+                                      sortState={stockpilesTableSort}
+                                      onSort={(key) => setStockpilesTableSort((prev) => toggleSortState(prev, key))}
+                                      align="right"
+                                      className="p-3 text-amber-300"
                                     />
                                     <SortableTh
                                       label="Relleno"
@@ -4029,13 +4314,14 @@ export default function App() {
                                       align="right"
                                       className="p-3 text-cyan-300"
                                     />
+                                    <th className="p-3 text-center">Foto</th>
                                     {currentUserRole === 'admin' && <th className="p-3 text-center">Acciones</th>}
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-800/60">
                                   {rows.length === 0 ? (
                                     <tr>
-                                      <td colSpan={currentUserRole === 'admin' ? 9 : 8} className="p-6 text-center text-gray-400">
+                                      <td colSpan={currentUserRole === 'admin' ? 11 : 10} className="p-6 text-center text-gray-400">
                                         No hay acopios registrados para el filtro seleccionado.
                                       </td>
                                     </tr>
@@ -4086,41 +4372,99 @@ export default function App() {
                                             )}
                                           </td>
                                           <td className="p-3">
-                                            <div className="text-blue-400 mb-1">{st.material}</div>
-                                            <div className="inline-flex items-center gap-1">
+                                            {currentUserRole !== 'admin' ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenEditStockpile(st)}
+                                                className="text-left text-blue-400 hover:text-blue-300 inline-flex items-center gap-1.5 group cursor-pointer"
+                                                title="Cambiar material (catálogo o personalizado) y densidad"
+                                              >
+                                                <span>{st.material}</span>
+                                                <span className="p-1 bg-gray-800/80 group-hover:bg-gray-700 text-blue-400 rounded border border-gray-700 transition shrink-0">
+                                                  <Sliders className="w-3 h-3" />
+                                                </span>
+                                              </button>
+                                            ) : (
+                                              <div className="text-blue-400">{st.material}</div>
+                                            )}
+                                          </td>
+                                          <td className="p-3 text-right whitespace-nowrap">
+                                            {currentUserRole === 'admin' ? (
                                               <InlineDensityCell
                                                 value={st.densityTonM3 || 1.68}
                                                 stockpileName={st.name}
                                                 onCommit={(nextDensity) => handleQuickUpdateStockpileDensity(st, nextDensity)}
                                               />
-                                              {currentUserRole !== 'admin' && (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleOpenEditStockpile(st)}
-                                                  className="p-1 bg-gray-800/80 hover:bg-gray-700 text-amber-300 rounded border border-gray-700 transition cursor-pointer"
-                                                  title="Abrir selector rápido de densidad y detalle del acopio"
-                                                  aria-label={`Preselecciones de densidad para ${st.name}`}
-                                                >
-                                                  <Sliders className="w-3 h-3" />
-                                                </button>
-                                              )}
-                                            </div>
+                                            ) : (
+                                              <span className="font-mono text-amber-300 font-semibold text-xs">
+                                                {formatEsNumber(st.densityTonM3 || 1.68, 2)} t/m³
+                                              </span>
+                                            )}
                                           </td>
                                           <td className="p-3 text-right font-mono text-emerald-400 whitespace-nowrap">
-                                            +{st.fillVolumeM3.toLocaleString('es-ES')} m³
+                                            +{formatEsNumber(st.fillVolumeM3)} m³
                                           </td>
                                           <td className="p-3 text-right font-mono text-red-400 whitespace-nowrap">
-                                            -{st.cutVolumeM3.toLocaleString('es-ES')} m³
+                                            -{formatEsNumber(st.cutVolumeM3)} m³
                                           </td>
                                           <td className="p-3 text-right font-mono whitespace-nowrap">
                                             <div className="text-blue-400 font-bold">
-                                              {st.netVolumeM3.toLocaleString('es-ES')} m³
+                                              {formatEsNumber(st.netVolumeM3)} m³
                                             </div>
                                             <div className="text-[11px] text-cyan-300 font-bold">
-                                              {st.tonnageEst.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t
+                                              {formatEsNumber(st.tonnageEst, 1)} t
                                             </div>
                                             <div className="text-[10px] text-purple-300">
-                                              {areaVal.toLocaleString('es-ES')} m²
+                                              {formatEsNumber(areaVal)} m²
+                                            </div>
+                                          </td>
+                                          <td className="p-3 text-center">
+                                            <div className="inline-flex items-center justify-center gap-1.5">
+                                              {st.photoUrl ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setPreviewStockpilePhoto(st)}
+                                                  className="w-9 h-9 rounded-lg overflow-hidden border border-gray-700 hover:border-cyan-400 transition shrink-0 cursor-pointer"
+                                                  title={`Ver fotografía de ${st.name}`}
+                                                >
+                                                  <img
+                                                    src={getAuthenticatedPhotoSrc(st.photoUrl)}
+                                                    alt={`Foto ${st.name}`}
+                                                    className="w-full h-full object-cover"
+                                                  />
+                                                </button>
+                                              ) : (
+                                                currentUserRole !== 'admin' && (
+                                                  <span className="text-[11px] text-gray-500">Sin foto</span>
+                                                )
+                                              )}
+                                              {currentUserRole === 'admin' && (
+                                                <label
+                                                  className={`px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer ${
+                                                    uploadingStockpilePhotoId === st.id ? 'opacity-60 pointer-events-none' : ''
+                                                  }`}
+                                                  title={st.photoUrl ? 'Sustituir fotografía del acopio' : 'Subir fotografía del acopio'}
+                                                >
+                                                  <Upload className="w-3.5 h-3.5" />
+                                                  <span>
+                                                    {uploadingStockpilePhotoId === st.id
+                                                      ? '...'
+                                                      : st.photoUrl
+                                                        ? ''
+                                                        : 'Subir'}
+                                                  </span>
+                                                  <input
+                                                    type="file"
+                                                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                                    className="hidden"
+                                                    onChange={(e) => {
+                                                      const file = e.target.files?.[0];
+                                                      e.target.value = '';
+                                                      handleQuickUploadStockpilePhoto(st, file);
+                                                    }}
+                                                  />
+                                                </label>
+                                              )}
                                             </div>
                                           </td>
                                           {currentUserRole === 'admin' && (
@@ -4153,26 +4497,27 @@ export default function App() {
                                 </tbody>
                                 <tfoot className="bg-[#0b0f17]/90 font-bold border-t border-gray-700">
                                   <tr>
-                                    <td colSpan={5} className="p-3 text-right text-gray-300 uppercase text-[10px]">
+                                    <td colSpan={6} className="p-3 text-right text-gray-300 uppercase text-[10px]">
                                       Totales Filtrados ({rows.length} acopios):
                                     </td>
                                     <td className="p-3 text-right font-mono text-emerald-400 whitespace-nowrap">
-                                      +{sumFill.toLocaleString('es-ES')} m³
+                                      +{formatEsNumber(sumFill)} m³
                                     </td>
                                     <td className="p-3 text-right font-mono text-red-400 whitespace-nowrap">
-                                      -{sumCut.toLocaleString('es-ES')} m³
+                                      -{formatEsNumber(sumCut)} m³
                                     </td>
                                     <td className="p-3 text-right font-mono whitespace-nowrap">
                                       <div className="text-blue-400">
-                                        {(sumFill - sumCut).toLocaleString('es-ES')} m³
+                                        {formatEsNumber(sumFill - sumCut)} m³
                                       </div>
                                       <div className="text-[11px] text-cyan-300">
-                                        {sumTon.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t
+                                        {formatEsNumber(sumTon, 1)} t
                                       </div>
                                       <div className="text-[10px] text-purple-300">
-                                        {sumArea.toLocaleString('es-ES')} m²
+                                        {formatEsNumber(sumArea)} m²
                                       </div>
                                     </td>
+                                    <td />
                                     {currentUserRole === 'admin' && <td />}
                                   </tr>
                                 </tfoot>
@@ -4185,7 +4530,24 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Below Table: Official PDF Report Generator Card (Synced 1:1 with visible table filters) */}
+                {/* Below Table: Active Flight & Table Stockpiles Bar Chart (synced 1:1 with table filters & sort) */}
+                <ActiveFlightStockpilesChart
+                  activeFlight={activeFlight}
+                  isAllFlights={isAllFlights || isMultiFlights}
+                  surveysCount={tableFilteredSurveys.length}
+                  quarryLabel={
+                    isAllQuarries
+                      ? `Todas las explotaciones (${scopedQuarries.length})`
+                      : activeQuarry?.name
+                  }
+                  filterSummary={tableFilterSummary}
+                  surveys={tableFilteredSurveys}
+                  stockpiles={tableFilteredStockpiles}
+                  zones={tableFilteredZones}
+                  theme={theme}
+                />
+
+                {/* Bottom: Official PDF Report Generator Card (Synced 1:1 with visible table filters) */}
                 <div className="glass-panel p-3.5 sm:p-5 rounded-xl border border-gray-800 space-y-4 min-w-0">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
@@ -4238,36 +4600,80 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="lg:col-span-5 space-y-1 lg:border-l lg:border-r lg:border-gray-800 lg:px-4">
-                      <span className="text-gray-400 text-[11px] block">
-                        Zona(s) visualizadas en tabla e informe (tabla + gráfica por zona):
-                      </span>
-                      <select
-                        value={activeZoneFilter}
-                        disabled={currentQuarryZones.length === 0}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setActiveZoneFilter(val);
-                          if (val !== 'all') {
-                            const z = currentQuarryZones.find((item) => item.name === val);
-                            if (z) setActiveZone(z);
-                          }
-                        }}
-                        className="w-full bg-[#0b0f17] border border-gray-700 rounded-lg p-2 text-white font-medium focus:border-blue-500 outline-none disabled:opacity-50"
-                      >
-                        <option value="all">
-                          Todas las zonas ({tableFilteredZones.length}{' '}
-                          {tableFilteredZones.length === 1 ? 'zona visible' : 'zonas visibles'})
-                        </option>
-                        {currentQuarryZones.map((z) => (
-                          <option key={z.id} value={z.name}>
-                            {z.code} — {z.name} ({z.targetMaterial})
+                    <div className="lg:col-span-4 space-y-2 lg:border-l lg:border-r lg:border-gray-800 lg:px-4">
+                      <div>
+                        <span className="text-gray-400 text-[11px] block mb-1">
+                          Zona(s) visualizadas en tabla e informe (tabla + gráfica por zona):
+                        </span>
+                        <select
+                          value={activeZoneFilter}
+                          disabled={currentQuarryZones.length === 0}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setActiveZoneFilter(val);
+                            if (val !== 'all') {
+                              const z = currentQuarryZones.find((item) => item.name === val);
+                              if (z) setActiveZone(z);
+                            }
+                          }}
+                          className="w-full bg-[#0b0f17] border border-gray-700 rounded-lg p-2 text-white font-medium focus:border-blue-500 outline-none disabled:opacity-50"
+                        >
+                          <option value="all">
+                            Todas las zonas ({tableFilteredZones.length}{' '}
+                            {tableFilteredZones.length === 1 ? 'zona visible' : 'zonas visibles'})
                           </option>
-                        ))}
-                      </select>
+                          {currentQuarryZones.map((z) => (
+                            <option key={z.id} value={z.name}>
+                              {z.code} — {z.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <span className="text-gray-400 text-[11px] block mb-1">
+                          Modalidad de Informe PDF:
+                        </span>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setPdfReportType('standard')}
+                            className={`p-2 rounded-lg border text-left transition cursor-pointer ${
+                              pdfReportType === 'standard'
+                                ? 'bg-blue-600/20 border-blue-500 text-white'
+                                : 'bg-[#0b0f17] border-gray-700 text-gray-300 hover:border-gray-500'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 font-semibold text-[11px]">
+                              <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              Estándar
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+                              Tabla técnica actual sin fotos
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPdfReportType('photographic')}
+                            className={`p-2 rounded-lg border text-left transition cursor-pointer ${
+                              pdfReportType === 'photographic'
+                                ? 'bg-amber-600/20 border-amber-500 text-white'
+                                : 'bg-[#0b0f17] border-gray-700 text-gray-300 hover:border-gray-500'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 font-semibold text-[11px]">
+                              <Camera className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              Fotográfico
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5 leading-tight">
+                              Añade columna final con miniaturas ({tableFilteredStockpiles.filter((s) => Boolean(s.photoUrl)).length}/{tableFilteredStockpiles.length})
+                            </div>
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="lg:col-span-3 space-y-3">
+                    <div className="lg:col-span-4 space-y-3">
                       <div className="grid grid-cols-3 gap-2 text-[11px]">
                         <div>
                           <span className="text-gray-500 block">Zonas:</span>
@@ -4291,34 +4697,29 @@ export default function App() {
 
                       <button
                         type="button"
-                        disabled={tableFilteredSurveys.length === 0 || tableFilteredZones.length === 0}
-                        onClick={() => handleGenerateZonePdf()}
+                        disabled={isGeneratingPdf || tableFilteredSurveys.length === 0 || tableFilteredZones.length === 0}
+                        onClick={() => handleGenerateZonePdf(undefined, undefined, false, pdfReportType)}
                         className="w-full py-2.5 px-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-lg flex items-center justify-center gap-2 transition cursor-pointer"
                       >
-                        <FileText className="w-4 h-4 shrink-0" /> Descargar PDF ({tableFilteredStockpiles.length}{' '}
-                        {tableFilteredStockpiles.length === 1 ? 'acopio' : 'acopios'})
+                        {pdfReportType === 'photographic' ? (
+                          <Camera className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <FileText className="w-4 h-4 shrink-0" />
+                        )}
+                        {isGeneratingPdf
+                          ? 'Generando PDF...'
+                          : pdfReportType === 'photographic'
+                            ? `Descargar PDF Fotográfico (${tableFilteredStockpiles.length} ${
+                                tableFilteredStockpiles.length === 1 ? 'acopio' : 'acopios'
+                              })`
+                            : `Descargar PDF Estándar (${tableFilteredStockpiles.length} ${
+                                tableFilteredStockpiles.length === 1 ? 'acopio' : 'acopios'
+                              })`}
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
-
-              {/* Active Flight & Table Stockpiles Bar Chart (synced 1:1 with table filters & sort) */}
-              <ActiveFlightStockpilesChart
-                activeFlight={activeFlight}
-                isAllFlights={isAllFlights || isMultiFlights}
-                surveysCount={tableFilteredSurveys.length}
-                quarryLabel={
-                  isAllQuarries
-                    ? `Todas las explotaciones (${scopedQuarries.length})`
-                    : activeQuarry?.name
-                }
-                filterSummary={tableFilterSummary}
-                surveys={tableFilteredSurveys}
-                stockpiles={tableFilteredStockpiles}
-                zones={tableFilteredZones}
-                theme={theme}
-              />
             </section>
           )
           }
@@ -4417,7 +4818,7 @@ export default function App() {
                           <span className="font-semibold text-white">{verifiedUploadNotice.fileName}</span>{' '}
                           ({verifiedUploadNotice.fileSize}
                           {verifiedUploadNotice.bytesStored > 0
-                            ? ` · ${verifiedUploadNotice.bytesStored.toLocaleString('es-ES')} bytes`
+                            ? ` · ${formatEsInt(verifiedUploadNotice.bytesStored)} bytes`
                             : ''}
                           )
                         </div>
@@ -4627,6 +5028,11 @@ export default function App() {
               }}
             />
           )}
+
+          {/* TAB 6: CONFIGURACIÓN DE PARÁMETROS Y MATERIALES (Admin Only) */}
+          {authenticatedRole === 'admin' && currentUserRole === 'admin' && activeTab === 'tab-settings' && (
+            <AdminParametersPanel onNotify={showToast} />
+          )}
         </main>
       </div>
 
@@ -4766,7 +5172,7 @@ export default function App() {
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
                   <Package className="w-5 h-5 text-indigo-400" />
                   {currentUserRole !== 'admin'
-                    ? 'Ajustar Densidad del Acopio'
+                    ? 'Material y Densidad del Acopio'
                     : modalStockpileData.id === 'new'
                       ? 'Nuevo Acopio en Vuelo'
                       : 'Editar Acopio y Densidad'}
@@ -4832,10 +5238,10 @@ export default function App() {
                     <input
                       type="text"
                       required
-                      disabled={currentUserRole !== 'admin'}
                       value={modalStockpileData.material}
                       onChange={(e) => setModalStockpileData({ ...modalStockpileData, material: e.target.value })}
-                      className="w-full bg-[#0b0f17] border border-gray-700 rounded-lg p-2 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                      placeholder="Ej. Caliza, Zahorra o personalizado"
+                      className="w-full bg-[#0b0f17] border border-gray-700 rounded-lg p-2 text-white"
                     />
                   </div>
                 </div>
@@ -4849,7 +5255,7 @@ export default function App() {
                         onChange={(e) =>
                           setModalStockpileData({
                             ...modalStockpileData,
-                            stockpileType: e.target.value as Zone['zoneType'],
+                            stockpileType: e.target.value as Stockpile['stockpileType'],
                           })
                         }
                         className="w-full bg-[#0b0f17] border border-gray-700 rounded-lg p-2 text-white cursor-pointer"
@@ -4902,27 +5308,24 @@ export default function App() {
                       className="w-24 bg-[#111827] border border-amber-500/50 rounded-lg px-2.5 py-1 text-right text-amber-300 font-mono font-bold outline-none focus:border-amber-400"
                     />
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {MATERIAL_DENSITY_PRESETS.map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() =>
-                          setModalStockpileData({
-                            ...modalStockpileData,
-                            densidad: preset.density,
-                            ...(currentUserRole === 'admin' ? { material: preset.label } : {}),
-                          })
-                        }
-                        className={`px-2 py-1 rounded border text-[10px] font-medium transition cursor-pointer ${Math.abs((modalStockpileData.densidad || 0) - preset.density) < 0.01
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                          : 'bg-[#111827] border-gray-700 text-gray-300 hover:border-gray-500'
-                          }`}
-                      >
-                        {preset.label} ({preset.density.toFixed(2)})
-                      </button>
-                    ))}
-                  </div>
+                  <MaterialDensitySelector
+                    density={modalStockpileData.densidad}
+                    materialName={modalStockpileData.material}
+                    canUpdateMaterial={true}
+                    onSelectDensity={(nextDensity, suggestedMaterial) =>
+                      setModalStockpileData((prev) => ({
+                        ...prev,
+                        densidad: nextDensity,
+                        ...(suggestedMaterial ? { material: suggestedMaterial } : {}),
+                      }))
+                    }
+                    onChangeCustomMaterial={(customMaterial) =>
+                      setModalStockpileData((prev) => ({
+                        ...prev,
+                        material: customMaterial,
+                      }))
+                    }
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -4974,6 +5377,93 @@ export default function App() {
                   />
                 </div>
 
+                {/* Fotografía del Acopio */}
+                {(() => {
+                  const previewSrc =
+                    pendingStockpilePhotoPreview ||
+                    (modalStockpileData.photoUrl ? getAuthenticatedPhotoSrc(modalStockpileData.photoUrl) : '');
+                  return (
+                    <div className="bg-[#0b0f17]/80 border border-gray-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-14 h-14 rounded-xl bg-[#111827] border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                          {previewSrc ? (
+                            <img
+                              src={previewSrc}
+                              alt="Vista previa acopio"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Camera className="w-5 h-5 text-gray-500" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-white text-xs">Fotografía del Acopio</div>
+                          <p className="text-[11px] text-gray-400 truncate">
+                            {modalStockpileData.photoFileName
+                              ? modalStockpileData.photoFileName
+                              : 'JPG, PNG o WebP. Disponible para descarga del cliente.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                        {modalStockpileData.photoUrl && !pendingStockpilePhotoFile && modalStockpileData.id !== 'new' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDownloadStockpilePhoto({
+                                id: parseInt(modalStockpileData.id, 10),
+                                code: modalStockpileData.name,
+                                name: modalStockpileData.zoneName,
+                                photoUrl: modalStockpileData.photoUrl,
+                                photoFileName: modalStockpileData.photoFileName,
+                              })
+                            }
+                            className="px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Descargar
+                          </button>
+                        )}
+                        {currentUserRole === 'admin' && (
+                          <>
+                            <label className="px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{previewSrc ? 'Cambiar Foto' : 'Subir Foto'}</span>
+                              <input
+                                type="file"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  e.target.value = '';
+                                  handleSelectModalStockpilePhoto(file);
+                                }}
+                              />
+                            </label>
+                            {previewSrc && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  clearPendingStockpilePhoto();
+                                  setModalStockpileData((prev) => ({
+                                    ...prev,
+                                    photoUrl: '',
+                                    photoFileName: '',
+                                  }));
+                                }}
+                                className="px-2 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-[11px] transition cursor-pointer"
+                                title="Quitar fotografía"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Live Tonnage Preview */}
                 {(() => {
                   const netM3 = Math.abs((modalStockpileData.relleno || 0) - (modalStockpileData.desmonte || 0));
@@ -4986,11 +5476,11 @@ export default function App() {
                           Tonelaje Estimado (m³ × t/m³)
                         </span>
                         <span className="code-font text-[11px] text-gray-400">
-                          {netM3.toLocaleString('es-ES')} m³ × {dens.toFixed(2)} t/m³
+                          {formatEsNumber(netM3)} m³ × {formatEsNumber(dens, 2)} t/m³
                         </span>
                       </div>
                       <span className="code-font text-base font-extrabold text-cyan-300">
-                        {calcTons.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t
+                        {formatEsNumber(calcTons, 1)} t
                       </span>
                     </div>
                   );
@@ -4999,7 +5489,10 @@ export default function App() {
                 <div className="pt-3 flex justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowStockpileModal(false)}
+                    onClick={() => {
+                      clearPendingStockpilePhoto();
+                      setShowStockpileModal(false);
+                    }}
                     className="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg cursor-pointer"
                   >
                     Cancelar
@@ -5012,6 +5505,57 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* MODAL VISTA PREVIA AMPLIADA DE FOTO DE ACOPIO */}
+      {
+        previewStockpilePhoto && previewStockpilePhoto.photoUrl && (
+          <div
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+            onClick={() => setPreviewStockpilePhoto(null)}
+          >
+            <div
+              className="glass-panel w-full max-w-3xl p-4 sm:p-5 rounded-2xl border border-gray-700 shadow-2xl space-y-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-gray-800 pb-3">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-white text-sm sm:text-base truncate flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-cyan-400 shrink-0" />
+                    {previewStockpilePhoto.name} ({previewStockpilePhoto.code})
+                  </h3>
+                  <p className="text-xs text-gray-400 truncate">
+                    {previewStockpilePhoto.material}
+                    {previewStockpilePhoto.photoFileName ? ` · ${previewStockpilePhoto.photoFileName}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadStockpilePhoto(previewStockpilePhoto)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" /> Descargar Foto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewStockpilePhoto(null)}
+                    className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800 transition cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="bg-[#0b0f17] rounded-xl border border-gray-800 p-2 flex items-center justify-center max-h-[75vh] overflow-hidden">
+                <img
+                  src={getAuthenticatedPhotoSrc(previewStockpilePhoto.photoUrl)}
+                  alt={`Fotografía de ${previewStockpilePhoto.name}`}
+                  className="max-h-[70vh] w-auto object-contain rounded-lg"
+                />
+              </div>
             </div>
           </div>
         )
@@ -5047,7 +5591,7 @@ export default function App() {
                   >
                     {currentQuarryZones.map((z) => (
                       <option key={z.id} value={z.id}>
-                        {z.name} ({z.code}) — {(z.densityTonM3 || 1.68).toFixed(2)} t/m³
+                        {z.name} ({z.code})
                       </option>
                     ))}
                   </select>
@@ -5119,14 +5663,13 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          const z = currentQuarryZones.find((item) => item.id === Number(modalFlightData.zoneId));
                           setModalFlightStockpiles((prev) => [
                             ...prev,
                             {
                               name: `Acopio #${prev.length + 1}`,
                               code: `ACO-${prev.length + 1}`,
-                              material: z?.targetMaterial || 'Grava caliza',
-                              densityTonM3: z?.densityTonM3 || 1.68,
+                              material: 'Grava caliza',
+                              densityTonM3: 1.68,
                               fillVolumeM3: 0,
                               cutVolumeM3: 0,
                             },
@@ -5482,7 +6025,7 @@ export default function App() {
                             <span className="text-cyan-300 font-mono">
                               {verifiedUploadNotice.fileSize}
                               {verifiedUploadNotice.bytesStored > 0
-                                ? ` (${verifiedUploadNotice.bytesStored.toLocaleString('es-ES')} bytes)`
+                                ? ` (${formatEsInt(verifiedUploadNotice.bytesStored)} bytes)`
                                 : ''}
                             </span>
                           </div>

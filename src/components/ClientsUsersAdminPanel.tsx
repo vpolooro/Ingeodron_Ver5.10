@@ -25,11 +25,13 @@ import {
   Box,
   FileSpreadsheet,
   Download,
+  Camera,
 } from 'lucide-react';
 import { AppUser, Client, Quarry, Zone, Survey, Stockpile, SurveyStatus } from '../types.ts';
 import { localDataStore } from '../utils/localDataStore.ts';
 import { buildClientFolderName } from '../utils/folderUtils.ts';
 import { formatDateEu } from '../utils/dateUtils.ts';
+import { formatEsNumber } from '../utils/numberFormat.ts';
 import { SortState, sortRowsBy, toggleSortState } from '../utils/tableSortUtils.ts';
 import { SortableTh } from './SortableTh.tsx';
 import {
@@ -37,7 +39,16 @@ import {
   downloadFlightsCsvTemplate,
   downloadStockpilesCsvTemplate,
 } from '../utils/csvImportUtils.ts';
+import {
+  uploadStockpilePhoto,
+  deleteStockpilePhotoServer,
+  downloadStockpilePhoto,
+  getAuthenticatedPhotoSrc,
+  validateStockpilePhotoFile,
+  buildRenamedStockpilePhotoFileName,
+} from '../utils/stockpilePhotoUtils.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { MaterialDensitySelector } from './MaterialDensitySelector.tsx';
 import { CsvImportModal } from './CsvImportModal.tsx';
 
 interface ClientsUsersAdminPanelProps {
@@ -151,8 +162,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
     name: '',
     code: '',
     location: '',
-    materialType: 'Caliza y Grava',
-    areaM2: 50000,
     status: 'active' as 'active' | 'in_restoration' | 'inactive',
   });
 
@@ -163,10 +172,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
     quarryId: quarries[0]?.id || 1,
     name: '',
     code: '',
-    zoneType: 'stockpile' as Zone['zoneType'],
-    targetMaterial: 'Grava caliza 12/20',
-    densityTonM3: 1.68,
-    baseElevationM: 115.0,
     status: 'active' as Zone['status'],
   });
 
@@ -193,7 +198,7 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
     surveyId: surveys[0]?.id || 1,
     name: '',
     code: '',
-    stockpileType: 'stockpile' as Zone['zoneType'],
+    stockpileType: 'stockpile' as Stockpile['stockpileType'],
     material: 'Grava caliza 12/20',
     densityTonM3: 1.68,
     baseElevationM: 115.0,
@@ -201,7 +206,13 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
     fillVolumeM3: 18000,
     cutVolumeM3: 0,
     notes: '',
+    photoUrl: '',
+    photoFileName: '',
   });
+  const [pendingStockpilePhotoFile, setPendingStockpilePhotoFile] = useState<File | null>(null);
+  const [pendingStockpilePhotoPreview, setPendingStockpilePhotoPreview] = useState<string>('');
+  const [uploadingStockpilePhotoId, setUploadingStockpilePhotoId] = useState<number | null>(null);
+  const [previewStockpilePhoto, setPreviewStockpilePhoto] = useState<Stockpile | null>(null);
 
   // Admin-only scoping strictly synced to header selectors: Cliente -> Explotación -> Vuelos
   const scopedClientId = isAdmin
@@ -308,7 +319,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
     return (
       z.name.toLowerCase().includes(q) ||
       z.code.toLowerCase().includes(q) ||
-      z.targetMaterial.toLowerCase().includes(q) ||
       (linkedQuarry?.name || '').toLowerCase().includes(q) ||
       (linkedClient?.name || '').toLowerCase().includes(q)
     );
@@ -457,6 +467,8 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
         return linkedZone?.name || '';
       case 'material':
         return st.material;
+      case 'density':
+        return st.densityTonM3 || 1.68;
       case 'fill':
         return st.fillVolumeM3;
       case 'cut':
@@ -679,9 +691,7 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
             name: clientForm.quarryName.trim(),
             code: `CAN-${Math.floor(100 + Math.random() * 900)}`,
             location: clientForm.quarryLocation.trim() || 'España',
-            materialType: 'Áridos Clasificados',
             status: 'active',
-            areaM2: 60000,
           });
           const rawZones = clientForm.zonesList.split(',').map((s) => s.trim()).filter(Boolean);
           for (const zName of rawZones) {
@@ -689,10 +699,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
               quarryId: createdQuarry.id,
               name: zName,
               code: `ZON-${Math.floor(10 + Math.random() * 90)}`,
-              zoneType: 'stockpile',
-              targetMaterial: 'Grava clasificada',
-              densityTonM3: 1.68,
-              baseElevationM: 115.0,
             });
           }
         }
@@ -868,8 +874,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       name: '',
       code: '',
       location: '',
-      materialType: 'Caliza y Grava',
-      areaM2: 50000,
       status: 'active',
     });
     setShowQuarryModal(true);
@@ -882,8 +886,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       name: item.name,
       code: item.code,
       location: item.location,
-      materialType: item.materialType,
-      areaM2: item.areaM2 || 50000,
       status: item.status,
     });
     setShowQuarryModal(true);
@@ -903,8 +905,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
           name: quarryForm.name.trim(),
           code: quarryForm.code.trim() || `CAN-${Math.floor(100 + Math.random() * 900)}`,
           location: quarryForm.location.trim() || 'España',
-          materialType: quarryForm.materialType.trim(),
-          areaM2: quarryForm.areaM2,
           status: quarryForm.status,
         });
         const ownerName = clients.find((c) => c.id === Number(quarryForm.clientId))?.name;
@@ -916,8 +916,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
           name: quarryForm.name.trim(),
           code: quarryForm.code.trim(),
           location: quarryForm.location.trim(),
-          materialType: quarryForm.materialType.trim(),
-          areaM2: quarryForm.areaM2,
           status: quarryForm.status,
         });
         onNotify('Explotación Actualizada', `Cambios guardados en ${quarryForm.name}.`);
@@ -962,10 +960,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       quarryId: defaultQuarryId || headerScopedQuarries[0].id,
       name: '',
       code: `ZON-${Math.floor(100 + Math.random() * 900)}`,
-      zoneType: 'stockpile',
-      targetMaterial: 'Grava caliza 12/20',
-      densityTonM3: 1.68,
-      baseElevationM: 115.0,
       status: 'active',
     });
     setShowZoneModal(true);
@@ -977,10 +971,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       quarryId: z.quarryId,
       name: z.name,
       code: z.code,
-      zoneType: z.zoneType,
-      targetMaterial: z.targetMaterial,
-      densityTonM3: z.densityTonM3 || 1.68,
-      baseElevationM: z.baseElevationM ?? 115.0,
       status: z.status || 'active',
     });
     setShowZoneModal(true);
@@ -988,18 +978,12 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
 
   const handleSaveZone = async (e: React.FormEvent) => {
     e.preventDefault();
-    const density = Math.max(0.1, Number(zoneForm.densityTonM3) || 1.68);
-    const baseElev = Number(zoneForm.baseElevationM) || 0;
 
     if (zoneForm.id === 'new') {
       localDataStore.createZone({
         quarryId: Number(zoneForm.quarryId),
         name: zoneForm.name.trim(),
         code: zoneForm.code.trim() || `ZON-${Math.floor(100 + Math.random() * 900)}`,
-        zoneType: zoneForm.zoneType,
-        targetMaterial: zoneForm.targetMaterial.trim(),
-        densityTonM3: density,
-        baseElevationM: baseElev,
         status: zoneForm.status,
       });
       onNotify('Zona Creada', `Zona "${zoneForm.name.trim()}" registrada correctamente.`);
@@ -1009,10 +993,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
         quarryId: Number(zoneForm.quarryId),
         name: zoneForm.name.trim(),
         code: zoneForm.code.trim(),
-        zoneType: zoneForm.zoneType,
-        targetMaterial: zoneForm.targetMaterial.trim(),
-        densityTonM3: density,
-        baseElevationM: baseElev,
         status: zoneForm.status,
       });
       onNotify('Zona Actualizada', `Datos de "${zoneForm.name.trim()}" actualizados.`);
@@ -1155,6 +1135,84 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
   };
 
   // --- STOCKPILE (ACOPIO) HANDLERS ---
+  const clearPendingStockpilePhoto = () => {
+    if (pendingStockpilePhotoPreview && pendingStockpilePhotoPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(pendingStockpilePhotoPreview);
+    }
+    setPendingStockpilePhotoFile(null);
+    setPendingStockpilePhotoPreview('');
+  };
+
+  const resolveStockpileUploadContext = (surveyId: number) => {
+    const survey = surveys.find((s) => s.id === surveyId);
+    const zone = survey ? zones.find((z) => z.id === survey.zoneId) : undefined;
+    const quarry = zone ? quarries.find((q) => q.id === zone.quarryId) : undefined;
+    const client = quarry ? clients.find((c) => c.id === quarry.clientId) : undefined;
+    return {
+      surveyId,
+      clientId: client?.id ?? quarry?.clientId,
+      clientCode: client?.code,
+      clientName: client?.name,
+      flightCode: survey?.flightCode,
+      flightNotes: survey?.notes,
+    };
+  };
+
+  const handleSelectModalStockpilePhoto = (file: File | null | undefined) => {
+    if (!file) return;
+    try {
+      validateStockpilePhotoFile(file);
+      if (pendingStockpilePhotoPreview && pendingStockpilePhotoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(pendingStockpilePhotoPreview);
+      }
+      const objectUrl = URL.createObjectURL(file);
+      setPendingStockpilePhotoFile(file);
+      setPendingStockpilePhotoPreview(objectUrl);
+      setStockpileForm((prev) => ({
+        ...prev,
+        photoFileName: buildRenamedStockpilePhotoFileName(prev.name, prev.code, file.name),
+      }));
+    } catch (err: any) {
+      onNotify('Imagen no válida', err.message || 'Selecciona una imagen JPG, PNG o WebP válida.');
+    }
+  };
+
+  const handleQuickUploadStockpilePhoto = async (st: Stockpile, file: File | null | undefined) => {
+    if (!file) return;
+    try {
+      setUploadingStockpilePhotoId(st.id);
+      const ctx = resolveStockpileUploadContext(st.surveyId);
+      const uploaded = await uploadStockpilePhoto({
+        stockpileId: st.id,
+        file,
+        stockpileName: st.name,
+        stockpileCode: st.code,
+        ...ctx,
+      });
+      localDataStore.updateStockpile(st.id, {
+        photoUrl: uploaded.photoUrl,
+        photoFileName: uploaded.photoFileName,
+      });
+      await onRefreshData();
+      onNotify('Fotografía Guardada', `Foto "${uploaded.photoFileName}" asociada al acopio ${st.name}.`);
+    } catch (err: any) {
+      onNotify('Error al Subir Foto', err.message || 'No se pudo subir la fotografía del acopio.');
+    } finally {
+      setUploadingStockpilePhotoId(null);
+    }
+  };
+
+  const handleDownloadStockpilePhoto = async (
+    st: Pick<Stockpile, 'id' | 'code' | 'name' | 'photoUrl' | 'photoFileName'>
+  ) => {
+    try {
+      const fileName = await downloadStockpilePhoto(st);
+      onNotify('Foto Descargada', `Fotografía "${fileName}" descargada correctamente.`);
+    } catch (err: any) {
+      onNotify('Error al Descargar Foto', err.message || 'No se pudo descargar la fotografía del acopio.');
+    }
+  };
+
   const openCreateStockpile = (defaultSurveyId?: number) => {
     const selectableSurveys = headerScopedSurveys.length > 0 ? headerScopedSurveys : quarryScopedSurveys;
     if (selectableSurveys.length === 0) {
@@ -1162,26 +1220,28 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       return;
     }
     const targetSurveyId = defaultSurveyId || selectableSurveys[0].id;
-    const parentSurvey = surveys.find((s) => s.id === targetSurveyId);
-    const parentZone = parentSurvey ? zones.find((z) => z.id === parentSurvey.zoneId) : undefined;
+    clearPendingStockpilePhoto();
     setStockpileForm({
       id: 'new',
       surveyId: targetSurveyId,
       name: '',
       code: `ACO-${targetSurveyId}-${Math.floor(10 + Math.random() * 90)}`,
-      stockpileType: parentZone?.zoneType || 'stockpile',
-      material: parentZone?.targetMaterial || 'Grava caliza 12/20',
-      densityTonM3: parentZone?.densityTonM3 || 1.68,
-      baseElevationM: parentZone?.baseElevationM ?? 115.0,
+      stockpileType: 'stockpile',
+      material: 'Grava caliza 12/20',
+      densityTonM3: 1.68,
+      baseElevationM: 115.0,
       areaM2: 2420,
       fillVolumeM3: 15000,
       cutVolumeM3: 0,
       notes: '',
+      photoUrl: '',
+      photoFileName: '',
     });
     setShowStockpileModal(true);
   };
 
   const openEditStockpile = (st: Stockpile) => {
+    clearPendingStockpilePhoto();
     const fallbackArea = Math.max(
       25,
       Math.round(Math.max(Math.abs(st.fillVolumeM3 || 0), Math.abs(st.cutVolumeM3 || 0)) / 6.2)
@@ -1199,6 +1259,8 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       fillVolumeM3: st.fillVolumeM3,
       cutVolumeM3: st.cutVolumeM3,
       notes: st.notes || '',
+      photoUrl: st.photoUrl || '',
+      photoFileName: st.photoFileName || '',
     });
     setShowStockpileModal(true);
   };
@@ -1213,10 +1275,11 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       const cut = Number(stockpileForm.cutVolumeM3) || 0;
 
       if (stockpileForm.id === 'new') {
-        localDataStore.createStockpile({
-          surveyId: Number(stockpileForm.surveyId),
+        const targetSurveyId = Number(stockpileForm.surveyId);
+        const created = localDataStore.createStockpile({
+          surveyId: targetSurveyId,
           name: stockpileForm.name.trim(),
-          code: stockpileForm.code.trim() || `ACO-${stockpileForm.surveyId}-${Math.floor(10 + Math.random() * 90)}`,
+          code: stockpileForm.code.trim() || `ACO-${targetSurveyId}-${Math.floor(10 + Math.random() * 90)}`,
           stockpileType: stockpileForm.stockpileType,
           material: stockpileForm.material.trim(),
           densityTonM3: density,
@@ -1226,11 +1289,47 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
           cutVolumeM3: cut,
           notes: stockpileForm.notes.trim(),
         });
+        if (pendingStockpilePhotoFile) {
+          const ctx = resolveStockpileUploadContext(targetSurveyId);
+          const uploaded = await uploadStockpilePhoto({
+            stockpileId: created.id,
+            file: pendingStockpilePhotoFile,
+            stockpileName: created.name,
+            stockpileCode: created.code,
+            ...ctx,
+          });
+          localDataStore.updateStockpile(created.id, {
+            photoUrl: uploaded.photoUrl,
+            photoFileName: uploaded.photoFileName,
+          });
+        }
         onNotify('Acopio Registrado', `Acopio "${stockpileForm.name.trim()}" añadido al vuelo.`);
       } else {
         const stId = parseInt(stockpileForm.id, 10);
+        const targetSurveyId = Number(stockpileForm.surveyId);
+        const prevStockpile = stockpiles.find((s) => s.id === stId);
+        let nextPhotoUrl: string | undefined = stockpileForm.photoUrl || undefined;
+        let nextPhotoFileName: string | undefined = stockpileForm.photoFileName || undefined;
+
+        if (pendingStockpilePhotoFile) {
+          const ctx = resolveStockpileUploadContext(targetSurveyId);
+          const uploaded = await uploadStockpilePhoto({
+            stockpileId: stId,
+            file: pendingStockpilePhotoFile,
+            stockpileName: stockpileForm.name.trim(),
+            stockpileCode: stockpileForm.code.trim(),
+            ...ctx,
+          });
+          nextPhotoUrl = uploaded.photoUrl;
+          nextPhotoFileName = uploaded.photoFileName;
+        } else if (!nextPhotoUrl && prevStockpile?.photoUrl) {
+          await deleteStockpilePhotoServer(stId);
+          nextPhotoUrl = undefined;
+          nextPhotoFileName = undefined;
+        }
+
         localDataStore.updateStockpile(stId, {
-          surveyId: Number(stockpileForm.surveyId),
+          surveyId: targetSurveyId,
           name: stockpileForm.name.trim(),
           code: stockpileForm.code.trim(),
           stockpileType: stockpileForm.stockpileType,
@@ -1241,10 +1340,13 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
           fillVolumeM3: fill,
           cutVolumeM3: cut,
           notes: stockpileForm.notes.trim(),
+          photoUrl: nextPhotoUrl,
+          photoFileName: nextPhotoFileName,
         });
         onNotify('Acopio Actualizado', `Cubicación de "${stockpileForm.name.trim()}" guardada y totales del vuelo recalculados.`);
       }
 
+      clearPendingStockpilePhoto();
       setShowStockpileModal(false);
       await onRefreshData();
     } catch (err: any) {
@@ -1262,6 +1364,7 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
         setConfirmDialog((prev) => ({ ...prev, open: false }));
         try {
           localDataStore.deleteStockpile(st.id);
+          await deleteStockpilePhotoServer(st.id);
           onNotify('Acopio Eliminado', `El acopio "${st.name}" ha sido eliminado y el vuelo actualizado.`);
           await onRefreshData();
         } catch (err: any) {
@@ -2098,17 +2201,19 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
                     <SortableTh label="Acopio" sortKey="name" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} className="p-3" />
                     <SortableTh label="Vuelo Vinculado" sortKey="flight" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} className="p-3" />
                     <SortableTh label="Zona / Explotación" sortKey="zone" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} className="p-3" />
-                    <SortableTh label="Material & Densidad" sortKey="material" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} className="p-3" />
+                    <SortableTh label="Material" sortKey="material" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} className="p-3" />
+                    <SortableTh label="Densidad" sortKey="density" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} align="right" className="p-3 text-amber-300" />
                     <SortableTh label="Relleno" sortKey="fill" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} align="right" className="p-3 text-emerald-400" />
                     <SortableTh label="Desmonte" sortKey="cut" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} align="right" className="p-3 text-red-400" />
                     <SortableTh label="Neto / Tonelaje" sortKey="net" sortState={tableSorts.stockpiles} onSort={(k) => handleTableSort('stockpiles', k)} align="right" className="p-3" />
+                    <th className="p-3 text-center">Foto</th>
                     <th className="p-3 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/60">
                   {sortedStockpiles.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-6 text-center text-gray-400">
+                      <td colSpan={11} className="p-6 text-center text-gray-400">
                         No hay acopios que coincidan con la búsqueda.
                       </td>
                     </tr>
@@ -2141,21 +2246,72 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
                           </td>
                           <td className="p-3">
                             <div className="text-blue-400">{st.material}</div>
-                            <div className="font-mono text-[10px] text-amber-400">
-                              {(st.densityTonM3 || 1.68).toFixed(2)} t/m³
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <div className="font-mono text-[11px] font-semibold text-amber-400">
+                              {formatEsNumber(st.densityTonM3 || 1.68, 2)} t/m³
                             </div>
                           </td>
                           <td className="p-3 text-right font-mono text-[11px] text-emerald-400 whitespace-nowrap">
-                            +{st.fillVolumeM3.toLocaleString('es-ES')} m³
+                            +{formatEsNumber(st.fillVolumeM3)} m³
                           </td>
                           <td className="p-3 text-right font-mono text-[11px] text-red-400 whitespace-nowrap">
-                            -{st.cutVolumeM3.toLocaleString('es-ES')} m³
+                            -{formatEsNumber(st.cutVolumeM3)} m³
                           </td>
                           <td className="p-3 text-right font-mono whitespace-nowrap">
-                            <div className="text-blue-400 font-bold">{st.netVolumeM3.toLocaleString('es-ES')} m³</div>
-                            <div className="text-[10px] text-cyan-300">{st.tonnageEst.toLocaleString('es-ES')} t</div>
+                            <div className="text-blue-400 font-bold">{formatEsNumber(st.netVolumeM3)} m³</div>
+                            <div className="text-[10px] text-cyan-300">{formatEsNumber(st.tonnageEst)} t</div>
                             <div className="text-[10px] text-purple-300">
-                              {(st.areaM2 ?? Math.round(Math.max(Math.abs(st.fillVolumeM3), Math.abs(st.cutVolumeM3)) / 6.2)).toLocaleString('es-ES')} m²
+                              {formatEsNumber(st.areaM2 ?? Math.round(Math.max(Math.abs(st.fillVolumeM3), Math.abs(st.cutVolumeM3)) / 6.2))} m²
+                            </div>
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="inline-flex items-center justify-center gap-1.5">
+                              {st.photoUrl && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewStockpilePhoto(st)}
+                                    className="w-9 h-9 rounded-lg overflow-hidden border border-gray-700 hover:border-cyan-400 transition shrink-0 cursor-pointer"
+                                    title={`Ver fotografía de ${st.name}`}
+                                  >
+                                    <img
+                                      src={getAuthenticatedPhotoSrc(st.photoUrl)}
+                                      alt={`Foto ${st.name}`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDownloadStockpilePhoto(st)}
+                                    className="px-2 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 rounded text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer"
+                                    title={`Descargar foto (${st.photoFileName || st.code})`}
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                              <label
+                                className={`px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer ${
+                                  uploadingStockpilePhotoId === st.id ? 'opacity-60 pointer-events-none' : ''
+                                }`}
+                                title={st.photoUrl ? 'Sustituir fotografía del acopio' : 'Subir fotografía del acopio'}
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                <span>
+                                  {uploadingStockpilePhotoId === st.id ? '...' : st.photoUrl ? '' : 'Subir'}
+                                </span>
+                                <input
+                                  type="file"
+                                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    e.target.value = '';
+                                    handleQuickUploadStockpilePhoto(st, file);
+                                  }}
+                                />
+                              </label>
                             </div>
                           </td>
                           <td className="p-3 text-right">
@@ -2954,7 +3110,10 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
               </h3>
               <button
                 type="button"
-                onClick={() => setShowStockpileModal(false)}
+                onClick={() => {
+                  clearPendingStockpilePhoto();
+                  setShowStockpileModal(false);
+                }}
                 className="text-gray-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -3050,6 +3209,27 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
                 </div>
               </div>
 
+              <div className="bg-[#0b0f17]/80 border border-gray-800 rounded-xl p-3">
+                <MaterialDensitySelector
+                  density={stockpileForm.densityTonM3}
+                  materialName={stockpileForm.material}
+                  canUpdateMaterial={true}
+                  onSelectDensity={(nextDensity, suggestedMaterial) =>
+                    setStockpileForm((prev) => ({
+                      ...prev,
+                      densityTonM3: nextDensity,
+                      ...(suggestedMaterial ? { material: suggestedMaterial } : {}),
+                    }))
+                  }
+                  onChangeCustomMaterial={(customMaterial) =>
+                    setStockpileForm((prev) => ({
+                      ...prev,
+                      material: customMaterial,
+                    }))
+                  }
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-gray-300 font-medium mb-1">Relleno (+m³):</label>
@@ -3104,6 +3284,90 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
                 />
               </div>
 
+              {/* Fotografía del Acopio */}
+              {(() => {
+                const previewSrc =
+                  pendingStockpilePhotoPreview ||
+                  (stockpileForm.photoUrl ? getAuthenticatedPhotoSrc(stockpileForm.photoUrl) : '');
+                return (
+                  <div className="bg-[#0b0f17]/80 border border-gray-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-12 h-12 rounded-xl bg-[#111827] border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                        {previewSrc ? (
+                          <img
+                            src={previewSrc}
+                            alt="Vista previa acopio"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Camera className="w-5 h-5 text-gray-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-white text-xs">Fotografía del Acopio</div>
+                        <p className="text-[11px] text-gray-400 truncate">
+                          {stockpileForm.photoFileName
+                            ? stockpileForm.photoFileName
+                            : 'JPG, PNG o WebP. Descargable por el cliente.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {stockpileForm.photoUrl && !pendingStockpilePhotoFile && stockpileForm.id !== 'new' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDownloadStockpilePhoto({
+                              id: parseInt(stockpileForm.id, 10),
+                              code: stockpileForm.code,
+                              name: stockpileForm.name,
+                              photoUrl: stockpileForm.photoUrl,
+                              photoFileName: stockpileForm.photoFileName,
+                            })
+                          }
+                          className="px-2 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/40 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 transition cursor-pointer"
+                          title="Descargar fotografía"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/40 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{previewSrc ? 'Cambiar' : 'Subir Foto'}</span>
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            handleSelectModalStockpilePhoto(file);
+                          }}
+                        />
+                      </label>
+                      {previewSrc && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearPendingStockpilePhoto();
+                            setStockpileForm((prev) => ({
+                              ...prev,
+                              photoUrl: '',
+                              photoFileName: '',
+                            }));
+                          }}
+                          className="px-2 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-[11px] transition cursor-pointer"
+                          title="Quitar fotografía"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {(() => {
                 const netM3 = (stockpileForm.fillVolumeM3 || 0) - (stockpileForm.cutVolumeM3 || 0);
                 const tons = Math.round(Math.abs(netM3) * (stockpileForm.densityTonM3 || 1.68) * 10) / 10;
@@ -3111,14 +3375,14 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
                   <div className="bg-indigo-950/30 border border-indigo-800/60 rounded-xl p-3 flex items-center justify-between">
                     <div>
                       <span className="text-[10px] uppercase tracking-wider text-indigo-300 font-semibold block">
-                        Balance Acopio ({(stockpileForm.densityTonM3 || 1.68).toFixed(2)} t/m³)
+                        Balance Acopio ({formatEsNumber(stockpileForm.densityTonM3 || 1.68, 2)} t/m³)
                       </span>
                       <span className="font-mono text-xs text-white">
-                        Neto: {netM3.toLocaleString('es-ES')} m³
+                        Neto: {formatEsNumber(netM3)} m³
                       </span>
                     </div>
                     <span className="font-mono text-sm font-bold text-cyan-300">
-                      {tons.toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t
+                      {formatEsNumber(tons, 1)} t
                     </span>
                   </div>
                 );
@@ -3127,7 +3391,10 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
               <div className="pt-3 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowStockpileModal(false)}
+                  onClick={() => {
+                    clearPendingStockpilePhoto();
+                    setShowStockpileModal(false);
+                  }}
                   className="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg cursor-pointer"
                 >
                   Cancelar
@@ -3140,6 +3407,55 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VISTA PREVIA AMPLIADA DE FOTO DE ACOPIO */}
+      {previewStockpilePhoto && previewStockpilePhoto.photoUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+          onClick={() => setPreviewStockpilePhoto(null)}
+        >
+          <div
+            className="glass-panel w-full max-w-3xl p-4 sm:p-5 rounded-2xl border border-gray-700 shadow-2xl space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-gray-800 pb-3">
+              <div className="min-w-0">
+                <h3 className="font-bold text-white text-sm sm:text-base truncate flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-cyan-400 shrink-0" />
+                  {previewStockpilePhoto.name} ({previewStockpilePhoto.code})
+                </h3>
+                <p className="text-xs text-gray-400 truncate">
+                  {previewStockpilePhoto.material}
+                  {previewStockpilePhoto.photoFileName ? ` · ${previewStockpilePhoto.photoFileName}` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadStockpilePhoto(previewStockpilePhoto)}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Download className="w-4 h-4" /> Descargar Foto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewStockpilePhoto(null)}
+                  className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="bg-[#0b0f17] rounded-xl border border-gray-800 p-2 flex items-center justify-center max-h-[75vh] overflow-hidden">
+              <img
+                src={getAuthenticatedPhotoSrc(previewStockpilePhoto.photoUrl)}
+                alt={`Fotografía de ${previewStockpilePhoto.name}`}
+                className="max-h-[70vh] w-auto object-contain rounded-lg"
+              />
+            </div>
           </div>
         </div>
       )}

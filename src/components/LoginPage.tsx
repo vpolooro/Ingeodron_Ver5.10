@@ -147,14 +147,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   return (
     <div className="min-h-screen bg-[#070a10] text-gray-200 flex flex-col justify-center selection:bg-blue-600 selection:text-white relative overflow-hidden">
-      {/* Subtle architectural contour backdrop */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-35"
-        style={{
-          backgroundImage:
-            'radial-gradient(circle at 18% 22%, rgba(37, 99, 235, 0.16), transparent 45%), radial-gradient(circle at 82% 78%, rgba(245, 158, 11, 0.08), transparent 40%)',
-        }}
-      />
 
       <div className="relative z-10 w-full max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12 items-center">
@@ -224,7 +216,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0" />
                 Acceso privado segmentado por explotación y cliente
               </span>
-              <span className="code-font text-[11px] text-gray-400">Ver: 5.10</span>
+              <span className="code-font text-[11px] text-gray-400">Ver: 5.20</span>
             </div>
           </div>
 

@@ -54,13 +54,13 @@ import {
 } from '../utils/threeFileLoader.ts';
 import {
   POLYGON_COLOR_PRESETS,
-  STOCKPILE_MATERIAL_PRESETS,
   buildDrawnShapesGroup,
   computePolygonVolumeMetrics,
   computeShapeMetrics,
   disposeObject3DTree,
   exportDrawingsCsv,
   pickSurfacePoint3D,
+  useStockpileMaterialPresets,
   type DrawToolMode,
   type DrawnPin3D,
   type DrawnPoint3D,
@@ -68,6 +68,7 @@ import {
 } from '../utils/drawing3DOverlay.ts';
 import { exportProfile2DDxf, exportProfile3DDxf } from '../utils/dxfProfileExporter.ts';
 import type { Quarry, Survey } from '../types.ts';
+import { formatEsInt, formatEsNumber } from '../utils/numberFormat.ts';
 
 type RenderMode3D = 'ortofoto' | 'hipsometria' | 'curvas' | 'nube' | 'tin';
 type CameraPresetId = 'oblique' | 'nadir' | 'north' | 'east';
@@ -98,7 +99,7 @@ interface CameraGoal {
 
 function formatElevM(v: number): string {
   if (!Number.isFinite(v)) return '0';
-  return Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1);
+  return Math.abs(v - Math.round(v)) < 0.05 ? formatEsInt(v) : formatEsNumber(v, 1);
 }
 
 function computeDemVisualSpan(zMinM: number, zMaxM: number): number {
@@ -205,7 +206,9 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
   const [isCssFullscreen, setIsCssFullscreen] = useState<boolean>(false);
   const isFullscreen = isNativeFullscreen || isCssFullscreen;
 
-  const defaultMaterialPreset = STOCKPILE_MATERIAL_PRESETS[2];
+  const materialPresets = useStockpileMaterialPresets();
+  const defaultMaterialPreset = materialPresets[2] ??
+    materialPresets[0] ?? { name: 'Caliza', densityTonM3: 1.65, color: '#eab308' };
   const [drawTool, setDrawTool] = useState<DrawToolMode>('orbit');
   const [activeDrawPoints, setActiveDrawPoints] = useState<DrawnPoint3D[]>([]);
   const [drawnShapes, setDrawnShapes] = useState<DrawnShape3D[]>([]);
@@ -548,7 +551,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
 
   const applyDrawMaterialPreset = (presetName: string) => {
     setDrawMaterial(presetName);
-    const preset = STOCKPILE_MATERIAL_PRESETS.find((m) => m.name === presetName);
+    const preset = materialPresets.find((m) => m.name === presetName);
     if (preset) {
       setDensityTonM3(preset.densityTonM3);
       setDrawColor(preset.color);
@@ -2338,7 +2341,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       return {
         key: f,
         value,
-        label: spanZ < 15 ? value.toFixed(1) : String(Math.round(value)),
+        label: spanZ < 15 ? formatEsNumber(value, 1) : formatEsInt(value),
       };
     });
     const tickFractions = w >= 860 ? [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1] : [0, 0.25, 0.5, 0.75, 1];
@@ -2461,9 +2464,9 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
               </div>
               <div className="text-[10px] font-mono text-gray-400 truncate">
                 {external3DSource && externalInfo
-                  ? `${externalInfo.kind === 'pointcloud' ? 'Nube' : 'Malla'} · ${externalInfo.count.toLocaleString('es-ES')}${
+                  ? `${externalInfo.kind === 'pointcloud' ? 'Nube' : 'Malla'} · ${formatEsInt(externalInfo.count)}${
                       externalInfo.totalCount && externalInfo.totalCount > externalInfo.count
-                        ? ` / ${externalInfo.totalCount.toLocaleString('es-ES')}`
+                        ? ` / ${formatEsInt(externalInfo.totalCount)}`
                         : ''
                     } pts`
                   : activeFlight
@@ -2538,7 +2541,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                             ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 font-bold'
                             : 'bg-gray-800/90 text-gray-400 hover:text-white border border-gray-700'
                         }`}
-                        title={`Cargar hasta ${preset.value.toLocaleString('es-ES')} puntos`}
+                        title={`Cargar hasta ${formatEsInt(preset.value)} puntos`}
                       >
                         {preset.label}
                       </button>
@@ -2626,38 +2629,41 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
               <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                 <div className="text-[9px] text-gray-400 uppercase">Volumen</div>
                 <div className="font-mono font-bold text-emerald-400">
-                  {selectedStockpile.netVolumeM3.toLocaleString('es-ES')} m³
+                  {formatEsNumber(selectedStockpile.netVolumeM3)} m³
                 </div>
               </div>
               <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                 <div className="text-[9px] text-gray-400 uppercase">Tonelaje Est.</div>
                 <div className="font-mono font-bold text-amber-300">
-                  {selectedStockpile.tonnageEst.toLocaleString('es-ES')} t
+                  {formatEsNumber(selectedStockpile.tonnageEst)} t
                 </div>
               </div>
               <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                 <div className="text-[9px] text-gray-400 uppercase">Densidad</div>
                 <div className="font-mono text-gray-200">
-                  {selectedStockpile.densityTonM3.toFixed(2)} t/m³
+                  {formatEsNumber(selectedStockpile.densityTonM3, 2)} t/m³
                 </div>
               </div>
               <div className="bg-[#111827] border border-gray-800 rounded-lg p-1.5">
                 <div className="text-[9px] text-gray-400 uppercase">Cota Cima</div>
                 <div className="font-mono text-cyan-300">
-                  {demElevToViewerZ(
-                    selectedStockpile.peakElevationM,
-                    demElevationBounds.minM,
-                    demElevationBounds.maxM,
-                    zMinM,
-                    zMaxM
-                  ).toFixed(1)}{' '}
+                  {formatEsNumber(
+                    demElevToViewerZ(
+                      selectedStockpile.peakElevationM,
+                      demElevationBounds.minM,
+                      demElevationBounds.maxM,
+                      zMinM,
+                      zMaxM
+                    ),
+                    1
+                  )}{' '}
                   m
                 </div>
               </div>
             </div>
             <div className="text-[10px] font-mono text-gray-400 flex items-center justify-between pt-0.5">
-              <span>E {selectedStockpile.easting.toFixed(1)}</span>
-              <span>N {selectedStockpile.northing.toFixed(1)}</span>
+              <span>E {formatEsNumber(selectedStockpile.easting, 1)}</span>
+              <span>N {formatEsNumber(selectedStockpile.northing, 1)}</span>
             </div>
           </div>
         )}
@@ -2734,7 +2740,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                           Total Acopios ({volumePolys.length})
                         </div>
                         <div className="font-mono text-[11px] font-bold text-emerald-300">
-                          +{Math.round(totalVolM3).toLocaleString('es-ES')} m³
+                          +{formatEsInt(totalVolM3)} m³
                         </div>
                       </div>
                       <div className="text-right">
@@ -2742,7 +2748,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                           Tonelaje Est.
                         </div>
                         <div className="font-mono text-[11px] font-bold text-amber-300">
-                          {Math.round(totalTons).toLocaleString('es-ES')} t
+                          {formatEsInt(totalTons)} t
                         </div>
                       </div>
                     </div>
@@ -2756,7 +2762,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                       const estTons = shape.cutVolumeM3 * shapeDensity;
                       const isEditing = selectedShapeId === shape.id && isStockpilePolygon;
                       const isEditingZone = editingZonePolygonId === shape.id && isZonePolygon;
-                      const matchedPreset = STOCKPILE_MATERIAL_PRESETS.find(
+                      const matchedPreset = materialPresets.find(
                         (m) => m.name === shape.material
                       );
                       const minPolyBaseY =
@@ -2835,9 +2841,9 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                                     <div className="font-mono text-[9.5px] text-cyan-300 truncate">
                                       Área{' '}
                                       {shape.area2DM2 >= 10000
-                                        ? `${(shape.area2DM2 / 10000).toFixed(2)} ha`
-                                        : `${Math.round(shape.area2DM2).toLocaleString('es-ES')} m²`}{' '}
-                                      · Perím. {shape.length3DM.toFixed(1)} m
+                                        ? `${formatEsNumber(shape.area2DM2 / 10000, 2)} ha`
+                                        : `${formatEsInt(shape.area2DM2)} m²`}{' '}
+                                      · Perím. {formatEsNumber(shape.length3DM, 1)} m
                                     </div>
                                   </div>
                                 ) : isStockpilePolygon ? (
@@ -2848,28 +2854,28 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                                           {shape.material || 'Material sin asignar'}
                                         </span>
                                         <span className="text-gray-400 font-mono">
-                                          {shapeDensity.toFixed(2)} t/m³
+                                          {formatEsNumber(shapeDensity, 2)} t/m³
                                         </span>
                                       </span>
                                     </div>
                                     {shape.volumeSupported && (
                                       <div className="font-mono text-[10px] font-semibold text-emerald-300 truncate">
-                                        Vol: +{Math.round(shape.cutVolumeM3).toLocaleString('es-ES')} m³ ·{' '}
-                                        {Math.round(estTons).toLocaleString('es-ES')} t
+                                        Vol: +{formatEsInt(shape.cutVolumeM3)} m³ ·{' '}
+                                        {formatEsInt(estTons)} t
                                       </div>
                                     )}
                                     <div className="font-mono text-[9px] text-gray-400 truncate w-[183.333px]">
                                       {shape.area2DM2 >= 10000
-                                        ? `${(shape.area2DM2 / 10000).toFixed(2)} ha`
-                                        : `${Math.round(shape.area2DM2).toLocaleString('es-ES')} m²`}{' '}
-                                      · Z base: {baseMinElevM.toFixed(1)}–{baseMaxElevM.toFixed(1)} m
+                                        ? `${formatEsNumber(shape.area2DM2 / 10000, 2)} ha`
+                                        : `${formatEsInt(shape.area2DM2)} m²`}{' '}
+                                      · Z base: {formatEsNumber(baseMinElevM, 1)}–{formatEsNumber(baseMaxElevM, 1)} m
                                     </div>
                                   </div>
                                 ) : (
                                   <div className="font-mono text-[9.5px] text-gray-400 truncate">
-                                    3D {shape.length3DM.toFixed(1)} m · ΔZ {shape.deltaZM >= 0 ? '+' : ''}
-                                    {shape.deltaZM.toFixed(1)} m ({shape.slopePct.toFixed(0)}% ·{' '}
-                                    {shape.slopeDeg.toFixed(1)}°)
+                                    3D {formatEsNumber(shape.length3DM, 1)} m · ΔZ {shape.deltaZM >= 0 ? '+' : ''}
+                                    {formatEsNumber(shape.deltaZM, 1)} m ({formatEsInt(shape.slopePct)}% ·{' '}
+                                    {formatEsNumber(shape.slopeDeg, 1)}°)
                                   </div>
                                 )}
                               </div>
@@ -2993,8 +2999,13 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                                     value={matchedPreset ? matchedPreset.name : '__custom__'}
                                     onChange={(e) => {
                                       const val = e.target.value;
-                                      if (val === '__custom__') return;
-                                      const preset = STOCKPILE_MATERIAL_PRESETS.find(
+                                      if (val === '__custom__') {
+                                        if (matchedPreset || !shape.material?.trim()) {
+                                          updateShape(shape.id, { material: 'Material personalizado' });
+                                        }
+                                        return;
+                                      }
+                                      const preset = materialPresets.find(
                                         (m) => m.name === val
                                       );
                                       if (preset) {
@@ -3006,8 +3017,8 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                                     }}
                                     className="w-full bg-[#0b0f17] border border-gray-700 focus:border-emerald-500 rounded-md px-1.5 py-1 text-[10px] text-gray-100 outline-none cursor-pointer"
                                   >
-                                    {STOCKPILE_MATERIAL_PRESETS.map((m) => (
-                                      <option key={m.name} value={m.name}>
+                                    {materialPresets.map((m, idx) => (
+                                      <option key={m.id || `${m.name}-${idx}`} value={m.name}>
                                         {m.name}
                                       </option>
                                     ))}
@@ -3198,8 +3209,8 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                                 </div>
                               )}
                               <div className="font-mono text-[9.5px] text-cyan-300 truncate">
-                                Z: {cotaZ.toFixed(2)} m · E {(pin.point.x * metersPerUnitRef.current).toFixed(1)} · N{' '}
-                                {(pin.point.z * metersPerUnitRef.current).toFixed(1)}
+                                Z: {formatEsNumber(cotaZ, 2)} m · E {formatEsNumber(pin.point.x * metersPerUnitRef.current, 1)} · N{' '}
+                                {formatEsNumber(pin.point.z * metersPerUnitRef.current, 1)}
                               </div>
                             </div>
                           </div>
@@ -3433,7 +3444,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
               className="w-28 accent-sky-400 cursor-pointer"
             />
             <span className="font-mono text-[10px] text-sky-300 w-16 text-right">
-              {Math.max(zMinM, Math.min(zMaxM, refPlaneElevM)).toFixed(1)} m
+              {formatEsNumber(Math.max(zMinM, Math.min(zMaxM, refPlaneElevM)), 1)} m
             </span>
           </div>
         )}
@@ -3553,7 +3564,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                     className="flex-1 accent-emerald-500 cursor-pointer"
                   />
                   <span className="font-mono text-emerald-300 w-9 text-right">
-                    {exaggeration.toFixed(2)}x
+                    {formatEsNumber(exaggeration, 2)}x
                   </span>
                 </label>
 
@@ -3571,7 +3582,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                       className="flex-1 accent-cyan-500 cursor-pointer"
                     />
                     <span className="font-mono text-cyan-300 w-10 text-right">
-                      {pointSize.toFixed(2)}
+                      {formatEsNumber(pointSize, 2)}
                     </span>
                   </label>
                 )}
@@ -3614,9 +3625,9 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
       {/* BOTTOM-LEFT LIVE XYZ COORDINATE READOUT */}
       {cursorCoords && (
         <div className="hidden md:flex absolute bottom-3 left-3 z-20 pointer-events-none bg-[#0b0f17]/90 border border-gray-800 rounded-lg px-2.5 py-1 text-[10px] font-mono text-gray-300 items-center gap-2 shadow">
-          <span>E: {cursorCoords.x.toFixed(1)} m</span>
-          <span>N: {cursorCoords.z.toFixed(1)} m</span>
-          <span className="text-cyan-300 font-semibold">Z: {cursorCoords.elevM.toFixed(2)} m</span>
+          <span>E: {formatEsNumber(cursorCoords.x, 1)} m</span>
+          <span>N: {formatEsNumber(cursorCoords.z, 1)} m</span>
+          <span className="text-cyan-300 font-semibold">Z: {formatEsNumber(cursorCoords.elevM, 2)} m</span>
         </div>
       )}
 
@@ -3809,10 +3820,10 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
             </div>
 
             <div className="text-[10px] font-mono text-cyan-300 bg-[#111827] border border-gray-800 rounded-lg px-2 py-1 flex items-center justify-between">
-              <span>Z: {pinCotaZ.toFixed(2)} m</span>
+              <span>Z: {formatEsNumber(pinCotaZ, 2)} m</span>
               <span className="text-gray-400">
-                E {(activePin.point.x * metersPerUnitRef.current).toFixed(1)} · N{' '}
-                {(activePin.point.z * metersPerUnitRef.current).toFixed(1)}
+                E {formatEsNumber(activePin.point.x * metersPerUnitRef.current, 1)} · N{' '}
+                {formatEsNumber(activePin.point.z * metersPerUnitRef.current, 1)}
               </span>
             </div>
 
@@ -3920,8 +3931,8 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
         if (!activeZone) return null;
         const areaText =
           activeZone.area2DM2 >= 10000
-            ? `${(activeZone.area2DM2 / 10000).toFixed(2)} ha`
-            : `${Math.round(activeZone.area2DM2).toLocaleString('es-ES')} m²`;
+            ? `${formatEsNumber(activeZone.area2DM2 / 10000, 2)} ha`
+            : `${formatEsInt(activeZone.area2DM2)} m²`;
 
         return (
           <div className="absolute top-14 left-1/2 -translate-x-1/2 z-30 w-[310px] sm:w-[360px] bg-[#0b0f17]/96 border border-lime-400/55 rounded-2xl p-3 shadow-2xl space-y-2.5">
@@ -3945,7 +3956,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
             <div className="text-[10px] font-mono text-cyan-300 bg-[#111827] border border-gray-800 rounded-lg px-2 py-1 flex items-center justify-between">
               <span>Área: {areaText}</span>
               <span className="text-gray-400">
-                Perím.: {activeZone.length3DM.toFixed(1)} m · {activeZone.points.length} vért.
+                Perím.: {formatEsNumber(activeZone.length3DM, 1)} m · {activeZone.points.length} vért.
               </span>
             </div>
 
@@ -4100,8 +4111,8 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                 )}
               </div>
               <div className="text-[11px] font-mono text-gray-400">
-                Longitud: {Math.round(profileChartData.maxD)} m · Z mín {profileChartData.minElev.toFixed(1)} m · Z máx{' '}
-                {profileChartData.maxElev.toFixed(1)} m · ΔZ {profileChartData.deltaZ.toFixed(1)} m
+                Longitud: {formatEsInt(profileChartData.maxD)} m · Z mín {formatEsNumber(profileChartData.minElev, 1)} m · Z máx{' '}
+                {formatEsNumber(profileChartData.maxElev, 1)} m · ΔZ {formatEsNumber(profileChartData.deltaZ, 1)} m
               </div>
             </div>
           </button>
@@ -4268,7 +4279,7 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                       fontSize="10"
                       fontFamily="monospace"
                     >
-                      {Math.round(tick.distM)} m
+                      {formatEsInt(tick.distM)} m
                     </text>
                   </g>
                 ))}
@@ -4337,28 +4348,28 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
                 {hoveredSample ? (
                   <div className="flex flex-wrap items-center gap-3">
                     <span>
-                      Dist: <strong className="text-white">{hoveredSample.distanceM.toFixed(1)} m</strong>
+                      Dist: <strong className="text-white">{formatEsNumber(hoveredSample.distanceM, 1)} m</strong>
                     </span>
                     <span className="text-rose-300 font-bold">
-                      Cota Z: {hoveredSample.elevationM.toFixed(2)} m
+                      Cota Z: {formatEsNumber(hoveredSample.elevationM, 2)} m
                     </span>
                     <span className="text-gray-400">
-                      UTM E {hoveredSample.easting.toFixed(1)} · N {hoveredSample.northing.toFixed(1)}
+                      UTM E {formatEsNumber(hoveredSample.easting, 1)} · N {formatEsNumber(hoveredSample.northing, 1)}
                     </span>
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-3">
                     <span>
-                      Longitud: <strong className="text-white">{Math.round(profileChartData.maxD)} m</strong>
+                      Longitud: <strong className="text-white">{formatEsInt(profileChartData.maxD)} m</strong>
                     </span>
                     <span>
-                      Z mín: <strong className="text-white">{profileChartData.minElev.toFixed(1)} m</strong>
+                      Z mín: <strong className="text-white">{formatEsNumber(profileChartData.minElev, 1)} m</strong>
                     </span>
                     <span>
-                      Z máx: <strong className="text-white">{profileChartData.maxElev.toFixed(1)} m</strong>
+                      Z máx: <strong className="text-white">{formatEsNumber(profileChartData.maxElev, 1)} m</strong>
                     </span>
                     <span>
-                      Desnivel ΔZ: <strong className="text-rose-300">{profileChartData.deltaZ.toFixed(1)} m</strong>
+                      Desnivel ΔZ: <strong className="text-rose-300">{formatEsNumber(profileChartData.deltaZ, 1)} m</strong>
                     </span>
                   </div>
                 )}

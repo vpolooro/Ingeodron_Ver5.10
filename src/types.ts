@@ -31,10 +31,7 @@ export interface Quarry {
   name: string;
   code: string;
   location: string;
-  coordinates?: string;
-  materialType: string;
   status: 'active' | 'in_restoration' | 'inactive';
-  areaM2?: number;
   createdAt?: string;
 }
 
@@ -43,10 +40,6 @@ export interface Zone {
   quarryId: number;
   name: string;
   code: string;
-  zoneType: 'stockpile' | 'bench_extraction' | 'fill_dump' | 'basin';
-  targetMaterial: string;
-  densityTonM3: number;
-  baseElevationM: number;
   status: 'active' | 'inactive';
   createdAt?: string;
 }
@@ -67,9 +60,6 @@ export interface Survey {
   tonnageEst: number;
   pointCount?: number;
   groundResolutionCm?: number;
-  meanElevationM?: number;
-  maxElevationM?: number;
-  minElevationM?: number;
   notes?: string;
   rawPointDataJson?: string;
   createdAt?: string;
@@ -90,6 +80,8 @@ export interface Stockpile {
   netVolumeM3: number;
   tonnageEst: number;
   notes?: string;
+  photoUrl?: string;
+  photoFileName?: string;
   createdAt?: string;
 }
 
