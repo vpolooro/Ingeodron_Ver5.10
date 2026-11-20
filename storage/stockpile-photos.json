@@ -1,0 +1,16 @@
+[
+  {
+    "stockpileId": 20,
+    "surveyId": 18,
+    "clientId": 1,
+    "clientCode": "c101",
+    "clientName": "Áridos y Canteras del Sur S.A.",
+    "clientFolder": "c101-aridos_canteras",
+    "flightSubFolder": "VUE-106-NOV-PEND-Mision_Reciente_-_Pendiente_de",
+    "fileName": "ACO-18-01_20mm.png",
+    "storedFileName": "ACO-18-01_20mm.png",
+    "photoUrl": "/api/stockpiles/20/photo?v=1795168963293",
+    "relativePath": "storage/c101-aridos_canteras/VUE-106-NOV-PEND-Mision_Reciente_-_Pendiente_de/imagenes_acopios/ACO-18-01_20mm.png",
+    "updatedAt": "2026-11-20T10:02:43.293Z"
+  }
+]

@@ -213,10 +213,10 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
   const [activeDrawPoints, setActiveDrawPoints] = useState<DrawnPoint3D[]>([]);
   const [drawnShapes, setDrawnShapes] = useState<DrawnShape3D[]>([]);
   const [drawnPins, setDrawnPins] = useState<DrawnPin3D[]>([]);
-  const [drawColor, setDrawColor] = useState<string>(defaultMaterialPreset.color);
-  const [drawOpacity, setDrawOpacity] = useState<number>(0.42);
-  const [drawMaterial, setDrawMaterial] = useState<string>(defaultMaterialPreset.name);
-  const [densityTonM3, setDensityTonM3] = useState<number>(defaultMaterialPreset.densityTonM3);
+  const drawColor = defaultMaterialPreset.color;
+  const drawOpacity = 0.42;
+  const drawMaterial = defaultMaterialPreset.name;
+  const densityTonM3 = defaultMaterialPreset.densityTonM3;
   const [showShapesPanel, setShowShapesPanel] = useState<boolean>(true);
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
@@ -547,15 +547,6 @@ export const Quarry3DViewer: React.FC<Quarry3DViewerProps> = ({
 
   const updateShape = (id: string, patch: Partial<DrawnShape3D>) => {
     setDrawnShapes((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  };
-
-  const applyDrawMaterialPreset = (presetName: string) => {
-    setDrawMaterial(presetName);
-    const preset = materialPresets.find((m) => m.name === presetName);
-    if (preset) {
-      setDensityTonM3(preset.densityTonM3);
-      setDrawColor(preset.color);
-    }
   };
 
   const commitDrawnShape = (

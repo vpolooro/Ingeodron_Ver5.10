@@ -986,10 +986,6 @@ class LocalDataStore {
     });
   }
 
-  getQuarriesByClient(clientId: number): Quarry[] {
-    return this.getQuarries().filter((q) => q.clientId === clientId);
-  }
-
   createQuarry(data: Partial<Quarry>): Quarry {
     const clients = this.getClients();
     const ownerClientId = Number(data.clientId);
@@ -1056,10 +1052,6 @@ class LocalDataStore {
     }));
   }
 
-  getZonesByQuarry(quarryId: number): Zone[] {
-    return this.getZones().filter((z) => z.quarryId === quarryId);
-  }
-
   createZone(data: Partial<Zone>): Zone {
     const quarries = this.getQuarries();
     const ownerQuarryId = Number(data.quarryId);
@@ -1106,57 +1098,6 @@ class LocalDataStore {
     };
     writeStorage(STORAGE_KEY_ZONES, zones);
     return zones[idx];
-  }
-
-  /**
-   * Updates zone properties and recalculates volume/tonnage totals if provided.
-   */
-  updateZoneAndRecalculate(
-    zoneId: number,
-    data: Partial<Zone>,
-    fillVolumeM3?: number,
-    cutVolumeM3?: number
-  ): Zone | null {
-    const updatedZone = this.updateZone(zoneId, data);
-    if (!updatedZone) return null;
-
-    const surveys = this.getSurveys();
-    const zoneSurveys = surveys.filter((s) => s.zoneId === zoneId);
-
-    if (zoneSurveys.length === 0 && (fillVolumeM3 !== undefined || cutVolumeM3 !== undefined)) {
-      const fill = fillVolumeM3 ?? 0;
-      const cut = cutVolumeM3 ?? 0;
-      const net = fill - cut;
-      const density = 1.68;
-      this.createSurvey({
-        zoneId,
-        surveyDate: new Date().toISOString().slice(0, 10),
-        flightCode: `VUE-${Date.now().toString().slice(-4)}`,
-        cutVolumeM3: cut,
-        fillVolumeM3: fill,
-        netVolumeM3: net,
-        tonnageEst: Math.round(Math.abs(net) * density * 10) / 10,
-      });
-      return updatedZone;
-    }
-
-    const targetSurvey =
-      zoneSurveys.find((s) => s.status === 'active') ||
-      zoneSurveys[zoneSurveys.length - 1];
-
-    if (targetSurvey && (fillVolumeM3 !== undefined || cutVolumeM3 !== undefined)) {
-      const targetStockpiles = this.getStockpilesBySurvey(targetSurvey.id);
-      if (targetStockpiles.length === 1) {
-        this.updateStockpile(targetStockpiles[0].id, {
-          fillVolumeM3: fillVolumeM3 ?? targetStockpiles[0].fillVolumeM3,
-          cutVolumeM3: cutVolumeM3 ?? targetStockpiles[0].cutVolumeM3,
-        });
-      } else {
-        this.syncSurveyTotalsFromStockpiles(targetSurvey.id);
-      }
-    }
-
-    return updatedZone;
   }
 
   deleteZone(id: number): { deletedSurveysCount: number; deletedStockpilesCount: number } {
@@ -1225,10 +1166,6 @@ class LocalDataStore {
       writeStorage(STORAGE_KEY_SURVEYS, sanitized);
     }
     return sanitized;
-  }
-
-  getSurveysByZone(zoneId: number): Survey[] {
-    return this.getSurveys().filter((s) => s.zoneId === zoneId);
   }
 
   createSurvey(
@@ -1592,27 +1529,6 @@ class LocalDataStore {
     return readStorage<Deliverable[]>(STORAGE_KEY_DELIVERABLES, INITIAL_DELIVERABLES);
   }
 
-  createDeliverable(data: Partial<Deliverable>): Deliverable {
-    const deliverables = this.getDeliverables();
-    const newId = deliverables.length > 0 ? Math.max(...deliverables.map((d) => d.id)) + 1 : 1;
-    const deliverable: Deliverable = {
-      id: newId,
-      quarryId: data.quarryId || 1,
-      surveyId: data.surveyId,
-      title: data.title || 'Nuevo Entregable',
-      category: data.category || 'pdf_report',
-      fileUrl: data.fileUrl || '#',
-      fileName: data.fileName || 'archivo_entrega.pdf',
-      fileSize: data.fileSize || '5.0 MB',
-      crs: data.crs || 'ETRS89 UTM 30N',
-      uploadDate: new Date().toISOString().slice(0, 10),
-      createdAt: new Date().toISOString(),
-    };
-    deliverables.push(deliverable);
-    writeStorage(STORAGE_KEY_DELIVERABLES, deliverables);
-    return deliverable;
-  }
-
   deleteDeliverable(id: number): void {
     const deliverables = this.getDeliverables().filter((d) => d.id !== id);
     writeStorage(STORAGE_KEY_DELIVERABLES, deliverables);
@@ -1697,16 +1613,6 @@ class LocalDataStore {
     return null;
   }
 
-  // Reset to original demo dataset
-  resetToDefaults(): void {
-    writeStorage(STORAGE_KEY_CLIENTS, INITIAL_CLIENTS);
-    writeStorage(STORAGE_KEY_QUARRIES, INITIAL_QUARRIES);
-    writeStorage(STORAGE_KEY_ZONES, INITIAL_ZONES);
-    writeStorage(STORAGE_KEY_SURVEYS, INITIAL_SURVEYS);
-    writeStorage(STORAGE_KEY_STOCKPILES, INITIAL_STOCKPILES);
-    writeStorage(STORAGE_KEY_DELIVERABLES, INITIAL_DELIVERABLES);
-    writeStorage(STORAGE_KEY_USERS, INITIAL_USERS);
-  }
 }
 
 export const localDataStore = new LocalDataStore();

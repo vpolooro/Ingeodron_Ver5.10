@@ -592,23 +592,30 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
  * Returns the absolute filesystem path of a stored deliverable.
  * Supports both new structure (with flightSubFolder) and legacy (direct in clientFolder).
  */
-function getDeliverableFilePath(item: ServerDeliverableRecord): string {
+function getAllDeliverableCandidatePaths(item: ServerDeliverableRecord): string[] {
   const storedName = item.storedFileName || item.fileName || '';
+  if (!item.clientFolder || !storedName) return [];
   if (item.flightSubFolder) {
-    const directPath = path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, storedName);
-    if (fs.existsSync(directPath)) return directPath;
-    const legacyPath = path.join(STORAGE_DIR, 'vuelos', item.clientFolder, item.flightSubFolder, storedName);
-    if (fs.existsSync(legacyPath)) return legacyPath;
-    return directPath;
+    return [
+      path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, storedName),
+      path.join(STORAGE_DIR, 'vuelos', item.clientFolder, item.flightSubFolder, storedName),
+    ];
   }
-  const directPath = path.join(STORAGE_DIR, item.clientFolder, storedName);
-  if (fs.existsSync(directPath)) return directPath;
-  const legacyPath = path.join(STORAGE_DIR, 'vuelos', item.clientFolder, storedName);
-  if (fs.existsSync(legacyPath)) return legacyPath;
-  return directPath;
+  return [
+    path.join(STORAGE_DIR, item.clientFolder, storedName),
+    path.join(STORAGE_DIR, 'vuelos', item.clientFolder, storedName),
+  ];
 }
 
-function readDeliverablesIndex(): ServerDeliverableRecord[] {
+function getDeliverableFilePath(item: ServerDeliverableRecord): string {
+  const candidates = getAllDeliverableCandidatePaths(item);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0] || '';
+}
+
+function readRawDeliverablesIndex(): ServerDeliverableRecord[] {
   ensureStorageDirectories();
   let indexPath = DELIVERABLES_INDEX_PATH;
   if (!fs.existsSync(indexPath) && fs.existsSync(LEGACY_DELIVERABLES_INDEX_PATH)) {
@@ -620,24 +627,29 @@ function readDeliverablesIndex(): ServerDeliverableRecord[] {
   try {
     const raw = fs.readFileSync(indexPath, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((item: ServerDeliverableRecord) => {
-      const candidatePath = getDeliverableFilePath(item);
-      const exists = Boolean(
-        item.clientFolder &&
-        (item.storedFileName || item.fileName) &&
-        isPathInsideDir(candidatePath, STORAGE_DIR) &&
-        fs.existsSync(candidatePath)
-      );
-      return {
-        ...item,
-        hasPhysicalFile: exists,
-        isServerStored: true,
-      };
-    });
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
+}
+
+function readDeliverablesIndex(): ServerDeliverableRecord[] {
+  const parsed = readRawDeliverablesIndex();
+  return parsed.map((item: ServerDeliverableRecord) => {
+    const candidatePath = getDeliverableFilePath(item);
+    const exists = Boolean(
+      candidatePath &&
+      item.clientFolder &&
+      (item.storedFileName || item.fileName) &&
+      isPathInsideDir(candidatePath, STORAGE_DIR) &&
+      fs.existsSync(candidatePath)
+    );
+    return {
+      ...item,
+      hasPhysicalFile: exists,
+      isServerStored: true,
+    };
+  });
 }
 
 function writeDeliverablesIndex(items: ServerDeliverableRecord[]): void {
@@ -647,23 +659,30 @@ function writeDeliverablesIndex(items: ServerDeliverableRecord[]): void {
 
 const ALLOWED_PHOTO_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
-function getStockpilePhotoFilePath(item: ServerStockpilePhotoRecord): string {
+function getAllStockpilePhotoCandidatePaths(item: ServerStockpilePhotoRecord): string[] {
   const storedName = item.storedFileName || item.fileName || '';
+  if (!item.clientFolder || !storedName) return [];
   if (item.flightSubFolder) {
-    const primaryPath = path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, 'imagenes_acopios', storedName);
-    if (fs.existsSync(primaryPath)) return primaryPath;
-    const legacyPath = path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, 'fotos_acopios', storedName);
-    if (fs.existsSync(legacyPath)) return legacyPath;
-    return primaryPath;
+    return [
+      path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, 'imagenes_acopios', storedName),
+      path.join(STORAGE_DIR, item.clientFolder, item.flightSubFolder, 'fotos_acopios', storedName),
+    ];
   }
-  const primaryPath = path.join(STORAGE_DIR, item.clientFolder, 'imagenes_acopios', storedName);
-  if (fs.existsSync(primaryPath)) return primaryPath;
-  const legacyPath = path.join(STORAGE_DIR, item.clientFolder, 'fotos_acopios', storedName);
-  if (fs.existsSync(legacyPath)) return legacyPath;
-  return primaryPath;
+  return [
+    path.join(STORAGE_DIR, item.clientFolder, 'imagenes_acopios', storedName),
+    path.join(STORAGE_DIR, item.clientFolder, 'fotos_acopios', storedName),
+  ];
 }
 
-function readStockpilePhotosIndex(): ServerStockpilePhotoRecord[] {
+function getStockpilePhotoFilePath(item: ServerStockpilePhotoRecord): string {
+  const candidates = getAllStockpilePhotoCandidatePaths(item);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0] || '';
+}
+
+function readRawStockpilePhotosIndex(): ServerStockpilePhotoRecord[] {
   ensureStorageDirectories();
   if (!fs.existsSync(STOCKPILE_PHOTOS_INDEX_PATH)) {
     return [];
@@ -671,20 +690,126 @@ function readStockpilePhotosIndex(): ServerStockpilePhotoRecord[] {
   try {
     const raw = fs.readFileSync(STOCKPILE_PHOTOS_INDEX_PATH, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item: ServerStockpilePhotoRecord) => {
-      if (!item || !item.clientFolder || !(item.storedFileName || item.fileName)) return false;
-      const p = getStockpilePhotoFilePath(item);
-      return isPathInsideDir(p, STORAGE_DIR) && fs.existsSync(p);
-    });
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
+function readStockpilePhotosIndex(): ServerStockpilePhotoRecord[] {
+  return readRawStockpilePhotosIndex().filter((item: ServerStockpilePhotoRecord) => {
+    if (!item || !item.clientFolder || !(item.storedFileName || item.fileName)) return false;
+    const p = getStockpilePhotoFilePath(item);
+    return isPathInsideDir(p, STORAGE_DIR) && fs.existsSync(p);
+  });
+}
+
 function writeStockpilePhotosIndex(items: ServerStockpilePhotoRecord[]): void {
   ensureStorageDirectories();
   fs.writeFileSync(STOCKPILE_PHOTOS_INDEX_PATH, JSON.stringify(items, null, 2), 'utf-8');
+}
+
+function isProtectedStoragePath(targetPath: string): boolean {
+  const resolved = path.resolve(targetPath);
+  const protectedPaths = new Set([
+    path.resolve(STORAGE_DIR),
+    path.resolve(TMP_UPLOAD_DIR),
+    path.resolve(DELIVERABLES_INDEX_PATH),
+    path.resolve(LEGACY_DELIVERABLES_INDEX_PATH),
+    path.resolve(STOCKPILE_PHOTOS_INDEX_PATH),
+    path.resolve(USERS_FILE_PATH),
+    path.resolve(CLIENTS_FILE_PATH),
+    path.resolve(MATERIALS_FILE_PATH),
+  ]);
+  return protectedPaths.has(resolved);
+}
+
+function unlinkFileSafe(filePath: string): boolean {
+  if (!filePath || !isPathInsideDir(filePath, STORAGE_DIR) || isProtectedStoragePath(filePath)) {
+    return false;
+  }
+  try {
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      fs.unlinkSync(filePath);
+      return true;
+    }
+  } catch {
+    // ignore unlink failure
+  }
+  return false;
+}
+
+function removeDirIfEmptySafe(dirPath: string): boolean {
+  if (!dirPath || !isPathInsideDir(dirPath, STORAGE_DIR) || isProtectedStoragePath(dirPath)) {
+    return false;
+  }
+  try {
+    if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
+      return false;
+    }
+    const entries = fs.readdirSync(dirPath);
+    if (entries.length === 0) {
+      fs.rmdirSync(dirPath);
+      return true;
+    }
+  } catch {
+    // ignore rmdir failure
+  }
+  return false;
+}
+
+function pruneEmptySubdirsUpTo(startDir: string, stopAtDir: string): number {
+  let removed = 0;
+  let current = path.resolve(startDir);
+  const resolvedStop = path.resolve(stopAtDir);
+
+  while (current !== resolvedStop && isPathInsideDir(current, resolvedStop) && isPathInsideDir(current, STORAGE_DIR)) {
+    if (!removeDirIfEmptySafe(current)) {
+      break;
+    }
+    removed++;
+    current = path.dirname(current);
+  }
+  return removed;
+}
+
+function pruneEmptyFlightSubdirIfUnused(clientFolder?: string, flightSubFolder?: string): void {
+  if (!clientFolder) return;
+  const clientDir = path.join(STORAGE_DIR, clientFolder);
+  if (flightSubFolder) {
+    const flightDir = path.join(clientDir, flightSubFolder);
+    removeDirIfEmptySafe(path.join(flightDir, 'imagenes_acopios'));
+    removeDirIfEmptySafe(path.join(flightDir, 'fotos_acopios'));
+    pruneEmptySubdirsUpTo(flightDir, clientDir);
+
+    const legacyFlightDir = path.join(STORAGE_DIR, 'vuelos', clientFolder, flightSubFolder);
+    pruneEmptySubdirsUpTo(legacyFlightDir, STORAGE_DIR);
+  } else {
+    removeDirIfEmptySafe(path.join(clientDir, 'imagenes_acopios'));
+    removeDirIfEmptySafe(path.join(clientDir, 'fotos_acopios'));
+    const legacyClientDir = path.join(STORAGE_DIR, 'vuelos', clientFolder);
+    pruneEmptySubdirsUpTo(legacyClientDir, STORAGE_DIR);
+  }
+}
+
+function removeDirRecursiveSafe(dirPath: string): boolean {
+  if (
+    !dirPath ||
+    !isPathInsideDir(dirPath, STORAGE_DIR) ||
+    isProtectedStoragePath(dirPath) ||
+    path.resolve(dirPath) === path.resolve(path.join(STORAGE_DIR, 'vuelos'))
+  ) {
+    return false;
+  }
+  try {
+    if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      return true;
+    }
+  } catch {
+    // ignore recursive delete failure
+  }
+  return false;
 }
 
 function moveFileSafe(srcPath: string, destPath: string): void {
@@ -1446,7 +1571,7 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const items = readDeliverablesIndex();
+    const items = readRawDeliverablesIndex();
     const target = items.find((d) => d.id === id);
     if (!target) {
       res.status(404).json({ error: 'Entregable no encontrado.' });
@@ -1456,7 +1581,6 @@ async function startServer(): Promise<void> {
     const remaining = items.filter((d) => d.id !== id);
     writeDeliverablesIndex(remaining);
 
-    const filePath = getDeliverableFilePath(target);
     const stillReferenced = remaining.some(
       (d) =>
         d.clientFolder === target.clientFolder &&
@@ -1464,12 +1588,11 @@ async function startServer(): Promise<void> {
         (d.storedFileName || d.fileName) === (target.storedFileName || target.fileName)
     );
 
-    if (!stillReferenced && isPathInsideDir(filePath, STORAGE_DIR) && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch {
-        // ignore unlink errors
+    if (!stillReferenced) {
+      for (const candidatePath of getAllDeliverableCandidatePaths(target)) {
+        unlinkFileSafe(candidatePath);
       }
+      pruneEmptyFlightSubdirIfUnused(target.clientFolder, target.flightSubFolder);
     }
 
     res.json({ deleted: true, id });
@@ -1722,9 +1845,9 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const items = readStockpilePhotosIndex();
-    const target = items.find((p) => p.stockpileId === stockpileId);
-    if (!target) {
+    const items = readRawStockpilePhotosIndex();
+    const targets = items.filter((p) => p.stockpileId === stockpileId);
+    if (targets.length === 0) {
       res.json({ deleted: false, stockpileId });
       return;
     }
@@ -1732,16 +1855,266 @@ async function startServer(): Promise<void> {
     const remaining = items.filter((p) => p.stockpileId !== stockpileId);
     writeStockpilePhotosIndex(remaining);
 
-    const filePath = getStockpilePhotoFilePath(target);
-    if (isPathInsideDir(filePath, STORAGE_DIR) && fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch {
-        // ignore unlink errors
+    for (const target of targets) {
+      for (const candidatePath of getAllStockpilePhotoCandidatePaths(target)) {
+        unlinkFileSafe(candidatePath);
       }
+      pruneEmptyFlightSubdirIfUnused(target.clientFolder, target.flightSubFolder);
     }
 
     res.json({ deleted: true, stockpileId });
+  });
+
+  // --------------------------------------------------------------------------
+  // CASCADING STORAGE CLEANUP ENDPOINT (Admin Only)
+  // Deletes files, index records, and directories for deleted clients/quarries/zones/flights
+  // --------------------------------------------------------------------------
+  app.post('/api/storage/cleanup-scope', requireAuth, requireAdmin, (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        scope?: 'client' | 'quarry' | 'zone' | 'flight';
+        clientId?: number;
+        clientCode?: string;
+        clientName?: string;
+        clientFolder?: string;
+        altClientFolder?: string;
+        quarryIds?: number[];
+        surveyIds?: number[];
+        stockpileIds?: number[];
+        flights?: Array<{
+          surveyId?: number;
+          flightCode?: string;
+          flightNotes?: string;
+          clientCode?: string;
+          clientName?: string;
+          clientFolder?: string;
+          altClientFolder?: string;
+        }>;
+      };
+
+      const scope = body.scope;
+      if (!scope || !['client', 'quarry', 'zone', 'flight'].includes(scope)) {
+        res.status(400).json({ error: 'Ámbito de limpieza no válido.' });
+        return;
+      }
+
+      const clientId =
+        body.clientId !== undefined && Number.isFinite(Number(body.clientId))
+          ? Number(body.clientId)
+          : undefined;
+      const quarryIdSet = new Set(
+        (Array.isArray(body.quarryIds) ? body.quarryIds : []).map(Number).filter(Number.isFinite)
+      );
+      const surveyIdSet = new Set(
+        (Array.isArray(body.surveyIds) ? body.surveyIds : []).map(Number).filter(Number.isFinite)
+      );
+      const stockpileIdSet = new Set(
+        (Array.isArray(body.stockpileIds) ? body.stockpileIds : []).map(Number).filter(Number.isFinite)
+      );
+
+      const clientFolderSet = new Set<string>();
+      const addClientFolderCandidate = (raw?: string) => {
+        if (raw && raw.trim()) {
+          clientFolderSet.add(sanitizeFolderSegment(raw.trim()));
+        }
+      };
+      addClientFolderCandidate(body.clientFolder);
+      addClientFolderCandidate(body.altClientFolder);
+      if (body.clientCode || body.clientName) {
+        clientFolderSet.add(buildClientFolderName(body.clientCode, body.clientName));
+      }
+
+      const flightDirTargets = new Map<string, { clientFolder: string; flightSubFolder: string }>();
+      const addFlightTarget = (cf?: string, ff?: string) => {
+        if (!cf || !ff) return;
+        const cleanCf = sanitizeFolderSegment(cf);
+        const cleanFf = sanitizeFlightSubFolderSegment(ff);
+        flightDirTargets.set(`${cleanCf}::${cleanFf}`, {
+          clientFolder: cleanCf,
+          flightSubFolder: cleanFf,
+        });
+      };
+
+      const inputFlights = Array.isArray(body.flights) ? body.flights : [];
+      for (const f of inputFlights) {
+        if (f.surveyId !== undefined && Number.isFinite(Number(f.surveyId))) {
+          surveyIdSet.add(Number(f.surveyId));
+        }
+        const localCfCandidates = new Set<string>();
+        if (f.clientFolder?.trim()) localCfCandidates.add(sanitizeFolderSegment(f.clientFolder.trim()));
+        if (f.altClientFolder?.trim()) localCfCandidates.add(sanitizeFolderSegment(f.altClientFolder.trim()));
+        if (f.clientCode || f.clientName) {
+          localCfCandidates.add(buildClientFolderName(f.clientCode, f.clientName));
+        }
+        for (const cf of clientFolderSet) {
+          localCfCandidates.add(cf);
+        }
+        if (f.flightCode || f.flightNotes) {
+          const ff = buildFlightSubFolderName(f.flightCode, f.flightNotes);
+          for (const cf of localCfCandidates) {
+            addFlightTarget(cf, ff);
+          }
+        }
+      }
+
+      const normalizedClientCode = body.clientCode ? sanitizeClientCode(body.clientCode) : '';
+      const normalizedClientName = (body.clientName || '').trim().toLowerCase();
+
+      // 1. Clean deliverables index + files
+      const allDeliverables = readRawDeliverablesIndex();
+      const removedDeliverables: ServerDeliverableRecord[] = [];
+      const remainingDeliverables: ServerDeliverableRecord[] = [];
+
+      for (const d of allDeliverables) {
+        let shouldDelete = false;
+        if (scope === 'client') {
+          shouldDelete =
+            (d.quarryId !== undefined && quarryIdSet.has(Number(d.quarryId))) ||
+            (d.surveyId !== undefined && surveyIdSet.has(Number(d.surveyId))) ||
+            Boolean(d.clientFolder && clientFolderSet.has(d.clientFolder)) ||
+            Boolean(
+              normalizedClientCode &&
+                d.clientCode?.toLowerCase() === normalizedClientCode &&
+                (!normalizedClientName || (d.clientName || '').trim().toLowerCase() === normalizedClientName)
+            );
+        } else if (scope === 'quarry') {
+          shouldDelete =
+            (d.quarryId !== undefined && quarryIdSet.has(Number(d.quarryId))) ||
+            (d.surveyId !== undefined && surveyIdSet.has(Number(d.surveyId)));
+        } else {
+          shouldDelete =
+            (d.surveyId !== undefined && surveyIdSet.has(Number(d.surveyId))) ||
+            (d.surveyId === undefined &&
+              Boolean(d.clientFolder && d.flightSubFolder) &&
+              flightDirTargets.has(`${d.clientFolder}::${d.flightSubFolder}`));
+        }
+
+        if (shouldDelete) {
+          removedDeliverables.push(d);
+          if (d.clientFolder && d.flightSubFolder) {
+            addFlightTarget(d.clientFolder, d.flightSubFolder);
+          }
+          if (scope === 'client' && d.clientFolder) {
+            addClientFolderCandidate(d.clientFolder);
+          }
+        } else {
+          remainingDeliverables.push(d);
+        }
+      }
+
+      if (removedDeliverables.length > 0) {
+        writeDeliverablesIndex(remainingDeliverables);
+      }
+
+      let deletedFilesCount = 0;
+      for (const d of removedDeliverables) {
+        const stillReferenced = remainingDeliverables.some(
+          (rem) =>
+            rem.clientFolder === d.clientFolder &&
+            rem.flightSubFolder === d.flightSubFolder &&
+            (rem.storedFileName || rem.fileName) === (d.storedFileName || d.fileName)
+        );
+        if (!stillReferenced) {
+          for (const candidatePath of getAllDeliverableCandidatePaths(d)) {
+            if (unlinkFileSafe(candidatePath)) deletedFilesCount++;
+          }
+        }
+      }
+
+      // 2. Clean stockpile photos index + files
+      const allPhotos = readRawStockpilePhotosIndex();
+      const removedPhotos: ServerStockpilePhotoRecord[] = [];
+      const remainingPhotos: ServerStockpilePhotoRecord[] = [];
+
+      for (const p of allPhotos) {
+        let shouldDelete = false;
+        if (scope === 'client') {
+          shouldDelete =
+            (clientId !== undefined && p.clientId === clientId) ||
+            (p.surveyId !== undefined && surveyIdSet.has(Number(p.surveyId))) ||
+            stockpileIdSet.has(Number(p.stockpileId)) ||
+            Boolean(p.clientFolder && clientFolderSet.has(p.clientFolder)) ||
+            Boolean(
+              normalizedClientCode &&
+                p.clientCode?.toLowerCase() === normalizedClientCode &&
+                (!normalizedClientName || !p.clientName || p.clientName.trim().toLowerCase() === normalizedClientName)
+            );
+        } else {
+          shouldDelete =
+            (p.surveyId !== undefined && surveyIdSet.has(Number(p.surveyId))) ||
+            stockpileIdSet.has(Number(p.stockpileId));
+        }
+
+        if (shouldDelete) {
+          removedPhotos.push(p);
+          if (p.clientFolder && p.flightSubFolder) {
+            addFlightTarget(p.clientFolder, p.flightSubFolder);
+          }
+          if (scope === 'client' && p.clientFolder) {
+            addClientFolderCandidate(p.clientFolder);
+          }
+        } else {
+          remainingPhotos.push(p);
+        }
+      }
+
+      if (removedPhotos.length > 0) {
+        writeStockpilePhotosIndex(remainingPhotos);
+      }
+
+      for (const p of removedPhotos) {
+        for (const candidatePath of getAllStockpilePhotoCandidatePaths(p)) {
+          if (unlinkFileSafe(candidatePath)) deletedFilesCount++;
+        }
+      }
+
+      // 3. Remove directories corresponding to the deleted scope
+      let deletedDirsCount = 0;
+      if (scope === 'client') {
+        for (const cf of clientFolderSet) {
+          if (removeDirRecursiveSafe(path.join(STORAGE_DIR, cf))) deletedDirsCount++;
+          if (removeDirRecursiveSafe(path.join(STORAGE_DIR, 'vuelos', cf))) deletedDirsCount++;
+        }
+        removeDirIfEmptySafe(path.join(STORAGE_DIR, 'vuelos'));
+      } else {
+        for (const target of flightDirTargets.values()) {
+          const sharedByRemainingDeliverable = remainingDeliverables.some(
+            (rem) =>
+              rem.clientFolder === target.clientFolder &&
+              rem.flightSubFolder === target.flightSubFolder
+          );
+          const sharedByRemainingPhoto = remainingPhotos.some(
+            (rem) =>
+              rem.clientFolder === target.clientFolder &&
+              rem.flightSubFolder === target.flightSubFolder
+          );
+
+          if (!sharedByRemainingDeliverable && !sharedByRemainingPhoto) {
+            if (removeDirRecursiveSafe(path.join(STORAGE_DIR, target.clientFolder, target.flightSubFolder))) {
+              deletedDirsCount++;
+            }
+            if (removeDirRecursiveSafe(path.join(STORAGE_DIR, 'vuelos', target.clientFolder, target.flightSubFolder))) {
+              deletedDirsCount++;
+            }
+            pruneEmptySubdirsUpTo(path.join(STORAGE_DIR, 'vuelos', target.clientFolder), STORAGE_DIR);
+          } else {
+            pruneEmptyFlightSubdirIfUnused(target.clientFolder, target.flightSubFolder);
+          }
+        }
+      }
+
+      res.json({
+        ok: true,
+        scope,
+        removedDeliverablesCount: removedDeliverables.length,
+        removedPhotosCount: removedPhotos.length,
+        deletedFilesCount,
+        deletedDirsCount,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error limpiando archivos y directorios.';
+      res.status(500).json({ error: msg });
+    }
   });
 
   // --------------------------------------------------------------------------

@@ -51,6 +51,12 @@ import {
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { MaterialDensitySelector } from './MaterialDensitySelector.tsx';
 import { CsvImportModal } from './CsvImportModal.tsx';
+import {
+  cleanupClientStorage,
+  cleanupQuarryStorage,
+  cleanupZoneStorage,
+  cleanupFlightStorage,
+} from '../utils/storageCleanup.ts';
 
 interface ClientsUsersAdminPanelProps {
   clients: Client[];
@@ -641,31 +647,6 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
     }
   };
 
-  /** Removes server-stored deliverables matching a deleted client, quarry, or flight. */
-  const cleanupServerDeliverables = async (
-    predicate: (d: { id: number; surveyId?: number; quarryId?: number; clientFolder?: string }) => boolean
-  ) => {
-    try {
-      const resp = await fetch('/api/deliverables', { headers: getAdminAuthHeaders() });
-      if (!resp.ok) return;
-      const data = await resp.json();
-      const list = Array.isArray(data?.deliverables) ? data.deliverables : [];
-      const toDelete = list.filter(predicate);
-      if (toDelete.length > 0) {
-        await Promise.allSettled(
-          toDelete.map((d: { id: number }) =>
-            fetch(`/api/deliverables/${d.id}`, {
-              method: 'DELETE',
-              headers: getAdminAuthHeaders(),
-            })
-          )
-        );
-      }
-    } catch {
-      // Non-blocking when offline
-    }
-  };
-
   const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = clientForm.code.trim();
@@ -751,24 +732,37 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
   };
 
   const handleDeleteClient = (c: Client) => {
-    const ownedCount = quarries.filter((item) => item.clientId === c.id).length;
+    const ownedQuarries = quarries.filter((item) => item.clientId === c.id);
+    const ownedQuarryIds = new Set(ownedQuarries.map((q) => q.id));
+    const ownedZones = zones.filter((z) => ownedQuarryIds.has(z.quarryId));
+    const ownedZoneIds = new Set(ownedZones.map((z) => z.id));
+    const ownedSurveys = surveys.filter((s) => ownedZoneIds.has(s.zoneId));
+    const ownedSurveyIds = new Set(ownedSurveys.map((s) => s.id));
+    const ownedStockpiles = stockpiles.filter((st) => ownedSurveyIds.has(st.surveyId));
+
     setConfirmDialog({
       open: true,
       title: 'Eliminar Cliente',
       message: `¿Seguro que deseas eliminar el cliente "${c.name}"?`,
       details:
-        ownedCount > 0
-          ? [`Se eliminarán también sus ${ownedCount} explotaciones exclusivas, zonas, vuelos y usuarios vinculados.`]
-          : ['Se eliminará el cliente y sus credenciales asociadas.'],
+        ownedQuarries.length > 0
+          ? [
+              `Se eliminarán también sus ${ownedQuarries.length} explotaciones exclusivas, zonas, vuelos, archivos entregables y su directorio en servidor.`,
+            ]
+          : ['Se eliminará el cliente, sus credenciales asociadas y su directorio de archivos en el servidor.'],
       confirmLabel: 'Eliminar Cliente',
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, open: false }));
-        const clientFolder = buildClientFolderName(c.code, c.name, c.id);
-        await cleanupServerDeliverables((d) => d.clientFolder === clientFolder);
+        await cleanupClientStorage({
+          client: c,
+          quarries: ownedQuarries,
+          surveys: ownedSurveys,
+          stockpiles: ownedStockpiles,
+        });
         localDataStore.deleteClient(c.id);
         await syncServerClients();
         await syncServerUsers();
-        onNotify('Cliente Eliminado', `${c.name} eliminado del registro.`);
+        onNotify('Cliente Eliminado', `${c.name} y sus archivos eliminados del registro.`);
         await onRefreshData();
       },
     });
@@ -930,19 +924,30 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
   };
 
   const handleDeleteQuarry = (item: Quarry) => {
-    const qZonesCount = zones.filter((z) => z.quarryId === item.id).length;
+    const qZones = zones.filter((z) => z.quarryId === item.id);
+    const qZoneIds = new Set(qZones.map((z) => z.id));
+    const qSurveys = surveys.filter((s) => qZoneIds.has(s.zoneId));
+    const qSurveyIds = new Set(qSurveys.map((s) => s.id));
+    const qStockpiles = stockpiles.filter((st) => qSurveyIds.has(st.surveyId));
+    const qClient = clients.find((c) => c.id === item.clientId);
+
     setConfirmDialog({
       open: true,
       title: 'Eliminar Explotación',
       message: `¿Seguro que deseas eliminar la explotación "${item.name}"?`,
       details:
-        qZonesCount > 0
-          ? [`Se eliminarán sus ${qZonesCount} zona(s), vuelos y acopios vinculados.`]
-          : undefined,
+        qZones.length > 0
+          ? [`Se eliminarán sus ${qZones.length} zona(s), vuelos, acopios, archivos y directorios vinculados.`]
+          : ['Se eliminarán los archivos entregables asociados a esta explotación.'],
       confirmLabel: 'Eliminar Explotación',
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, open: false }));
-        await cleanupServerDeliverables((d) => d.quarryId === item.id);
+        await cleanupQuarryStorage({
+          quarry: item,
+          client: qClient,
+          surveys: qSurveys,
+          stockpiles: qStockpiles,
+        });
         localDataStore.deleteQuarry(item.id);
         onNotify('Explotación Eliminada', `${item.name} borrada del directorio.`);
         await onRefreshData();
@@ -1006,15 +1011,17 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
   const handleDeleteZone = (z: Zone) => {
     const zSurveys = surveys.filter((s) => s.zoneId === z.id);
     const zSurveyIds = new Set(zSurveys.map((s) => s.id));
-    const zStockpilesCount = stockpiles.filter((st) => zSurveyIds.has(st.surveyId)).length;
+    const zStockpiles = stockpiles.filter((st) => zSurveyIds.has(st.surveyId));
+    const zQuarry = quarries.find((q) => q.id === z.quarryId);
+    const zClient = zQuarry ? clients.find((c) => c.id === zQuarry.clientId) : undefined;
     const details: string[] = [
       `Se borrará la zona "${z.name}" (${z.code}) del registro de zonas.`,
       zSurveys.length > 0
-        ? `Se eliminarán ${zSurveys.length} vuelo(s) vinculados de la lista de vuelos.`
+        ? `Se eliminarán ${zSurveys.length} vuelo(s) vinculados junto con sus archivos y carpetas.`
         : 'No hay vuelos vinculados a esta zona.',
     ];
-    if (zStockpilesCount > 0) {
-      details.push(`Se eliminarán ${zStockpilesCount} acopio(s) asociados.`);
+    if (zStockpiles.length > 0) {
+      details.push(`Se eliminarán ${zStockpiles.length} acopio(s) asociados.`);
     }
 
     setConfirmDialog({
@@ -1025,6 +1032,13 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
       confirmLabel: 'Eliminar Zona',
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, open: false }));
+        await cleanupZoneStorage({
+          zone: z,
+          quarry: zQuarry,
+          client: zClient,
+          surveys: zSurveys,
+          stockpiles: zStockpiles,
+        });
         const result = localDataStore.deleteZone(z.id);
         onNotify(
           'Zona Eliminada',
@@ -1118,18 +1132,28 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
   };
 
   const handleDeleteFlight = (s: Survey) => {
-    const childCount = stockpiles.filter((st) => st.surveyId === s.id).length;
+    const childStockpiles = stockpiles.filter((st) => st.surveyId === s.id);
+    const fZone = zones.find((z) => z.id === s.zoneId);
+    const fQuarry = fZone ? quarries.find((q) => q.id === fZone.quarryId) : undefined;
+    const fClient = fQuarry ? clients.find((c) => c.id === fQuarry.clientId) : undefined;
     setConfirmDialog({
       open: true,
       title: 'Eliminar Vuelo',
       message: `¿Borrar por completo el vuelo "${s.flightCode}" (${formatDateEu(s.surveyDate)})?`,
-      details: childCount > 0 ? [`Se eliminarán sus ${childCount} acopio(s) vinculados.`] : undefined,
+      details:
+        childStockpiles.length > 0
+          ? [`Se eliminarán sus ${childStockpiles.length} acopio(s), entregables y la carpeta del vuelo en el servidor.`]
+          : ['Se eliminarán los entregables y la carpeta del vuelo en el servidor.'],
       confirmLabel: 'Eliminar Vuelo',
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, open: false }));
-        await cleanupServerDeliverables((d) => d.surveyId === s.id);
+        await cleanupFlightStorage({
+          flight: s,
+          client: fClient,
+          stockpiles: childStockpiles,
+        });
         localDataStore.deleteSurvey(s.id);
-        onNotify('Vuelo Eliminado', `El vuelo ${s.flightCode} y sus acopios han sido eliminados.`);
+        onNotify('Vuelo Eliminado', `El vuelo ${s.flightCode}, sus acopios y su directorio han sido eliminados.`);
         await onRefreshData();
       },
     });

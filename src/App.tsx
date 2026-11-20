@@ -67,6 +67,7 @@ import {
   validateStockpilePhotoFile,
   buildRenamedStockpilePhotoFileName,
 } from './utils/stockpilePhotoUtils.ts';
+import { cleanupZoneStorage, cleanupFlightStorage } from './utils/storageCleanup.ts';
 
 function sortSurveysNewestFirst(list: Survey[]): Survey[] {
   return [...list].sort((a, b) => {
@@ -171,7 +172,7 @@ function getInitialSession(): AppUser | null {
   }
 }
 
-export function getAuthHeaders(customHeaders: Record<string, string> = {}): Record<string, string> {
+function getAuthHeaders(customHeaders: Record<string, string> = {}): Record<string, string> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('ingeodron_token') : null;
   const headers: Record<string, string> = { ...customHeaders };
   if (token) {
@@ -1343,12 +1344,6 @@ export default function App() {
     }
   }, [activeTab, selectedQuarryId, activeQuarry, visibleQuarries, activeFlightId, viewer3DFlight, viewer3DZones]);
 
-  // Deliverables strictly for active quarry selection
-  const currentDeliverables = useMemo(() => {
-    if (!hasQuarryScope) return [];
-    return deliverables.filter((d) => scopedQuarryIds.has(d.quarryId));
-  }, [deliverables, hasQuarryScope, scopedQuarryIds]);
-
   // Official Deliverables strictly filtered by header selection: Cliente + Explotación + Vuelo
   const officialDeliverables = useMemo(() => {
     if (!hasQuarryScope) return [];
@@ -1571,18 +1566,24 @@ export default function App() {
 
   const handleDeleteZone = (zone: Zone) => {
     if (authenticatedRole !== 'admin' || currentUserRole !== 'admin') return;
-    const zSurveys = currentSurveys.filter((s) => s.zoneId === zone.id);
+    const zSurveys = surveys.filter((s) => s.zoneId === zone.id);
     const zSurveyIds = new Set(zSurveys.map((s) => s.id));
-    const zStockpilesCount = currentStockpiles.filter((st) => zSurveyIds.has(st.surveyId)).length;
+    const zStockpiles = stockpiles.filter((st) => zSurveyIds.has(st.surveyId));
+    const zDeliverablesCount = deliverables.filter(
+      (d) => d.surveyId !== undefined && zSurveyIds.has(d.surveyId)
+    ).length;
 
     const details: string[] = [
       `Se eliminará la zona "${zone.name}" (${zone.code}) del listado de zonas.`,
       zSurveys.length > 0
-        ? `Se borrarán ${zSurveys.length} vuelo(s) vinculados de la lista de vuelos.`
+        ? `Se borrarán ${zSurveys.length} vuelo(s) vinculados y sus carpetas asociadas.`
         : 'No hay vuelos vinculados a esta zona.',
     ];
-    if (zStockpilesCount > 0) {
-      details.push(`Se eliminarán ${zStockpilesCount} acopio(s) asociados a esos vuelos.`);
+    if (zStockpiles.length > 0) {
+      details.push(`Se eliminarán ${zStockpiles.length} acopio(s) asociados a esos vuelos.`);
+    }
+    if (zDeliverablesCount > 0) {
+      details.push(`Se eliminarán ${zDeliverablesCount} entregable(s) y archivos del servidor.`);
     }
 
     setConfirmDialog({
@@ -1592,6 +1593,15 @@ export default function App() {
       details,
       confirmLabel: 'Eliminar Zona',
       onConfirm: async () => {
+        const zQuarry = quarries.find((q) => q.id === zone.quarryId);
+        const zClient = zQuarry ? clients.find((c) => c.id === zQuarry.clientId) : undefined;
+        await cleanupZoneStorage({
+          zone,
+          quarry: zQuarry,
+          client: zClient,
+          surveys: zSurveys,
+          stockpiles: zStockpiles,
+        });
         const result = localDataStore.deleteZone(zone.id);
         if (activeZoneFilter === zone.name) setActiveZoneFilter('all');
         setConfirmDialog((prev) => ({ ...prev, open: false }));
@@ -2035,15 +2045,15 @@ export default function App() {
     showToast('Estado de Vuelo', `Vuelo actualizado a estado "${newStatus.toUpperCase()}"`);
   };
 
-  // Delete an entire flight (survey + linked deliverables) — Admin only
+  // Delete an entire flight (survey + linked deliverables + directory) — Admin only
   const handleDeleteFlight = (flight: Survey) => {
     if (authenticatedRole !== 'admin' || currentUserRole !== 'admin') return;
 
     const linkedDeliverablesCount = deliverables.filter((d) => d.surveyId === flight.id).length;
-    const childStockpilesCount = currentStockpiles.filter((st) => st.surveyId === flight.id).length;
+    const childStockpiles = stockpiles.filter((st) => st.surveyId === flight.id);
     const details = [
-      `Vuelo ${flight.flightCode} (${formatDateEu(flight.surveyDate)})`,
-      ...(childStockpilesCount > 0 ? [`Se eliminarán ${childStockpilesCount} acopio(s) vinculados.`] : []),
+      `Vuelo ${flight.flightCode} (${formatDateEu(flight.surveyDate)}) y su carpeta en servidor`,
+      ...(childStockpiles.length > 0 ? [`Se eliminarán ${childStockpiles.length} acopio(s) vinculados.`] : []),
       ...(linkedDeliverablesCount > 0 ? [`Se eliminarán ${linkedDeliverablesCount} entregable(s) vinculados.`] : []),
     ];
 
@@ -2056,19 +2066,14 @@ export default function App() {
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, open: false }));
         try {
-          const linkedServerDeliverables = deliverables.filter(
-            (d) => d.surveyId === flight.id && d.isServerStored
-          );
-          if (linkedServerDeliverables.length > 0) {
-            await Promise.allSettled(
-              linkedServerDeliverables.map((d) =>
-                fetch(`/api/deliverables/${d.id}`, {
-                  method: 'DELETE',
-                  headers: getAuthHeaders(),
-                })
-              )
-            );
-          }
+          const fZone = zones.find((z) => z.id === flight.zoneId);
+          const fQuarry = fZone ? quarries.find((q) => q.id === fZone.quarryId) : undefined;
+          const fClient = fQuarry ? clients.find((c) => c.id === fQuarry.clientId) : undefined;
+          await cleanupFlightStorage({
+            flight,
+            client: fClient,
+            stockpiles: childStockpiles,
+          });
           localDataStore.deleteSurvey(flight.id);
           await fetchData();
           showToast(

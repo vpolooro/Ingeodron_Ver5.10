@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { formatEsInt, formatEsNumber } from './numberFormat.ts';
 import {
-  MATERIAL_DENSITY_CATALOG,
   MATERIALS_UPDATED_EVENT,
   formatMaterialDisplayName,
   getMaterialDensityCatalog,
@@ -67,19 +66,6 @@ export interface StockpileMaterialPreset {
   note: string;
   color: string;
 }
-
-export const STOCKPILE_MATERIAL_PRESETS: readonly StockpileMaterialPreset[] = MATERIAL_DENSITY_CATALOG.map(
-  (entry) => ({
-    id: entry.id,
-    name: formatMaterialDisplayName(entry),
-    category: entry.category,
-    densityTonM3: entry.defaultDensity,
-    minDensity: entry.minDensity,
-    maxDensity: entry.maxDensity,
-    note: entry.note,
-    color: entry.color,
-  })
-);
 
 export function getStockpileMaterialPresets(): StockpileMaterialPreset[] {
   return getMaterialDensityCatalog().map((entry) => ({
