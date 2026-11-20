@@ -446,8 +446,8 @@ function drawStockpilesBarChartSection(
         { align: 'center' }
       );
 
-      // X-axis Code (primary label)
-      const maxCodeChars = chunk.length > 7 ? 9 : 13;
+      // X-axis Material / Code (primary label)
+      const maxCodeChars = chunk.length > 7 ? 12 : 16;
       const maxNameChars = chunk.length > 7 ? 12 : 18;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.2);
@@ -1256,7 +1256,7 @@ export async function generateZonePdfReport({
         ? zStockpiles.map((st) => {
             const s = filteredSurveyById.get(st.surveyId);
             return {
-              code: st.code,
+              code: st.material || st.code,
               name: st.name,
               subLabel: zSurveys.length > 1 && s ? s.flightCode : undefined,
               fillM3: Math.abs(st.fillVolumeM3 || 0),

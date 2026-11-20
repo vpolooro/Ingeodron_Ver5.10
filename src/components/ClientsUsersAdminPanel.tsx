@@ -26,6 +26,7 @@ import {
   FileSpreadsheet,
   Download,
   Camera,
+  Sliders,
 } from 'lucide-react';
 import { AppUser, Client, Quarry, Zone, Survey, Stockpile, SurveyStatus } from '../types.ts';
 import { localDataStore } from '../utils/localDataStore.ts';
@@ -2245,7 +2246,17 @@ export const ClientsUsersAdminPanel: React.FC<ClientsUsersAdminPanelProps> = ({
                             <div className="text-[10px] text-gray-400">{linkedQuarry?.name || ''}</div>
                           </td>
                           <td className="p-3">
-                            <div className="text-blue-400">{st.material}</div>
+                            <button
+                              type="button"
+                              onClick={() => openEditStockpile(st)}
+                              className="text-left text-blue-400 hover:text-blue-300 inline-flex items-center gap-1.5 group cursor-pointer"
+                              title="Cambiar material (catálogo o personalizado) y densidad"
+                            >
+                              <span>{st.material}</span>
+                              <span className="p-1 bg-gray-800/80 group-hover:bg-gray-700 text-blue-400 rounded border border-gray-700 transition shrink-0">
+                                <Sliders className="w-3 h-3" />
+                              </span>
+                            </button>
                           </td>
                           <td className="p-3 text-right whitespace-nowrap">
                             <div className="font-mono text-[11px] font-semibold text-amber-400">

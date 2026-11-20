@@ -4069,21 +4069,15 @@ export default function App() {
                                               )}
                                             </div>
                                           </div>
-                                          {currentUserRole !== 'admin' ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => handleOpenEditStockpile(st)}
-                                              className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[10px] font-medium shrink-0 inline-flex items-center gap-1 transition cursor-pointer"
-                                              title="Cambiar material o densidad del acopio"
-                                            >
-                                              <span>{st.material}</span>
-                                              <Sliders className="w-2.5 h-2.5 opacity-80" />
-                                            </button>
-                                          ) : (
-                                            <span className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[10px] font-medium shrink-0">
-                                              {st.material}
-                                            </span>
-                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenEditStockpile(st)}
+                                            className="px-2 py-0.5 rounded bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[10px] font-medium shrink-0 inline-flex items-center gap-1 transition cursor-pointer"
+                                            title="Cambiar material (catálogo o personalizado) y densidad"
+                                          >
+                                            <span>{st.material}</span>
+                                            <Sliders className="w-2.5 h-2.5 opacity-80" />
+                                          </button>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-2 bg-[#111827]/80 border border-gray-800 rounded-lg p-2.5 font-mono text-[11px]">
@@ -4372,21 +4366,17 @@ export default function App() {
                                             )}
                                           </td>
                                           <td className="p-3">
-                                            {currentUserRole !== 'admin' ? (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleOpenEditStockpile(st)}
-                                                className="text-left text-blue-400 hover:text-blue-300 inline-flex items-center gap-1.5 group cursor-pointer"
-                                                title="Cambiar material (catálogo o personalizado) y densidad"
-                                              >
-                                                <span>{st.material}</span>
-                                                <span className="p-1 bg-gray-800/80 group-hover:bg-gray-700 text-blue-400 rounded border border-gray-700 transition shrink-0">
-                                                  <Sliders className="w-3 h-3" />
-                                                </span>
-                                              </button>
-                                            ) : (
-                                              <div className="text-blue-400">{st.material}</div>
-                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenEditStockpile(st)}
+                                              className="text-left text-blue-400 hover:text-blue-300 inline-flex items-center gap-1.5 group cursor-pointer"
+                                              title="Cambiar material (catálogo o personalizado) y densidad"
+                                            >
+                                              <span>{st.material}</span>
+                                              <span className="p-1 bg-gray-800/80 group-hover:bg-gray-700 text-blue-400 rounded border border-gray-700 transition shrink-0">
+                                                <Sliders className="w-3 h-3" />
+                                              </span>
+                                            </button>
                                           </td>
                                           <td className="p-3 text-right whitespace-nowrap">
                                             {currentUserRole === 'admin' ? (

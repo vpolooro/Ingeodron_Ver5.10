@@ -626,7 +626,7 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
                         Desm.
                       </text>
 
-                      {/* X-axis Code */}
+                      {/* X-axis Material */}
                       <text
                         x={centerX}
                         y={padTop + plotH + 29}
@@ -636,7 +636,7 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
                         fontWeight="700"
                         fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
                       >
-                        {truncateLabel(item.st.code, chartItems.length > 5 ? 11 : 16)}
+                        {truncateLabel(item.st.material || item.st.code, chartItems.length > 5 ? 14 : 18)}
                       </text>
 
                       {/* X-axis Stockpile Name */}
@@ -740,7 +740,7 @@ export const ActiveFlightStockpilesChart: React.FC<ActiveFlightStockpilesChartPr
                       fontWeight="700"
                       fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
                     >
-                      {truncateLabel(item.st.code, chartItems.length > 5 ? 11 : 16)}
+                      {truncateLabel(item.st.material || item.st.code, chartItems.length > 5 ? 14 : 18)}
                     </text>
 
                     <text
