@@ -2866,7 +2866,7 @@ export default function App() {
               : 'bg-[#0b0f17]/70 text-gray-400 border border-gray-800 hover:text-white'
               }`}
           >
-            <Plane className="w-3.5 h-3.5 shrink-0" />
+            <Plane className="w-3.5 h-3.5 shrink-0 text-sky-400" />
             <span>1. Vuelos</span>
           </button>
 
@@ -2878,7 +2878,7 @@ export default function App() {
               : 'bg-[#0b0f17]/70 text-gray-400 border border-gray-800 hover:text-white'
               }`}
           >
-            <CubesIcon className="w-3.5 h-3.5 shrink-0" />
+            <CubesIcon className="w-3.5 h-3.5 shrink-0 text-violet-400" />
             <span>2. Acopios</span>
           </button>
 
@@ -2891,7 +2891,7 @@ export default function App() {
                 : 'bg-[#0b0f17]/70 text-gray-400 border border-gray-800 hover:text-white'
                 }`}
             >
-              <Box className="w-3.5 h-3.5 shrink-0" />
+              <Box className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
               <span>3. Visor 3D</span>
             </button>
           )}
@@ -2904,7 +2904,7 @@ export default function App() {
               : 'bg-[#0b0f17]/70 text-gray-400 border border-gray-800 hover:text-white'
               }`}
           >
-            <Download className="w-3.5 h-3.5 shrink-0" />
+            <Download className="w-3.5 h-3.5 shrink-0 text-rose-400" />
             <span>{canAccessViewer3d ? '4.' : '3.'} Entregables</span>
           </button>
 
@@ -2948,7 +2948,7 @@ export default function App() {
                 : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                 }`}
             >
-              <Plane className="w-5 h-5 shrink-0 text-center text-[#b8d020]" />
+              <Plane className="w-5 h-5 shrink-0 text-center text-sky-400" />
               <span className="truncate">1. Listado de Vuelos</span>
             </button>
 
@@ -2960,7 +2960,7 @@ export default function App() {
                 : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                 }`}
             >
-              <CubesIcon className="w-5 h-5 shrink-0 text-center text-[#b8d020]" />
+              <CubesIcon className="w-5 h-5 shrink-0 text-center text-violet-400" />
               <span className="truncate">2. Volúmenes de Acopios</span>
             </button>
 
@@ -2973,7 +2973,7 @@ export default function App() {
                   : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                   }`}
               >
-                <Box className="w-5 h-5 shrink-0 text-center text-[#b8d020]" />
+                <Box className="w-5 h-5 shrink-0 text-center text-cyan-400" />
                 <span className="truncate">3. Visor 3D &amp; Planos</span>
               </button>
             )}
@@ -2986,7 +2986,7 @@ export default function App() {
                 : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                 }`}
             >
-              <Download className="w-5 h-5 shrink-0 text-center text-[#b8d020]" />
+              <Download className="w-5 h-5 shrink-0 text-center text-rose-400" />
               <span className="truncate">{canAccessViewer3d ? '4.' : '3.'} Entregables Oficiales</span>
             </button>
 
@@ -3000,7 +3000,7 @@ export default function App() {
                     : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                     }`}
                 >
-                  <Users className="w-5 h-5 shrink-0 text-amber-500 text-center" />
+                  <Users className="w-5 h-5 shrink-0 text-amber-400 text-center" />
                   <span className="truncate">{canAccessViewer3d ? '5.' : '4.'} Clientes y Usuarios</span>
                 </button>
 
